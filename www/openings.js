@@ -32,7 +32,9 @@ window.OpeningsModule = function (RA) {
 
   // ---------------------------------------------------------------- Datenmodell
   const DOOR_TYPES = ['Zimmertür', 'Wohnungseingangstür', 'Haustür', 'Nebeneingangstür', 'Schiebetür', 'Glastür', 'Brandschutztür'];
-  const FRAMES = ['Umfassungszarge', 'Blockzarge', 'Stahlzarge', 'Blockrahmen', 'ohne Zarge'];
+  const PASS = 'Durchgangszarge (ohne Türblatt)';
+  const FRAMES = ['Umfassungszarge', PASS, 'Blockzarge', 'Stahlzarge', 'Blockrahmen', 'ohne Zarge'];
+  const isPass = (o) => o.type === 'door' && o.frame === PASS;
   const LOCKS = ['BB (Buntbart)', 'PZ (Profilzylinder)', 'WC (Bad)', 'ohne Schloss'];
   const SASH_TYPES = [
     ['DK-L', 'Dreh-Kipp, Anschlag links'], ['DK-R', 'Dreh-Kipp, Anschlag rechts'],
@@ -55,6 +57,7 @@ window.OpeningsModule = function (RA) {
     const base = {
       id: uid(), type, pos: '', roomId: '', location: '', qty: 1,
       w: [null, null, null], h: [null, null, null], diag: [null, null], wall: [null, null],
+      outer: { w: null, h: null },
       note: '', photos: [],
     };
     if (type === 'door') {
@@ -68,6 +71,7 @@ window.OpeningsModule = function (RA) {
       mount: 'stumpf (ohne Anschlag)', material: 'Kunststoff', colorIn: 'weiß', colorOut: 'weiß', glazing: '3-fach',
       shutter: 'kein', shutterDrive: 'Gurt', parapet: null,
       gapSide: 15, gapTop: 15, gapBottom: 30,
+      ext: { l: 0, r: 0, t: 0, b: 0 },
       sillIn: { on: false, reveal: null, front: 20, side: 20, insert: 0, material: '' },
       sillOut: { on: false, reveal: null, front: 40, side: 15, insert: 20, material: '' },
     });
@@ -77,9 +81,11 @@ window.OpeningsModule = function (RA) {
     const out = Object.assign(d, o);
     for (const k of ['w', 'h']) out[k] = [0, 1, 2].map((i) => (isNum((o[k] || [])[i]) ? o[k][i] : null));
     for (const k of ['diag', 'wall']) out[k] = [0, 1].map((i) => (isNum((o[k] || [])[i]) ? o[k][i] : null));
+    out.outer = Object.assign({ w: null, h: null }, o.outer || {});
     if (out.type === 'window') {
       out.sillIn = Object.assign(defaults('window').sillIn, o.sillIn || {});
       out.sillOut = Object.assign(defaults('window').sillOut, o.sillOut || {});
+      out.ext = Object.assign({ l: 0, r: 0, t: 0, b: 0 }, o.ext || {});
       out.sashTypes = [0, 1, 2].map((i) => (o.sashTypes && o.sashTypes[i]) || ['DK-R', 'DK-L', 'F'][i]);
     }
     out.photos = Array.isArray(o.photos) ? o.photos.slice() : [];
@@ -107,6 +113,15 @@ window.OpeningsModule = function (RA) {
     if (dH > 5) r.checks.push({ lvl: 'warn', t: `Höhe ungleich: ${mm(dH)} mm Unterschied – kleinstes Maß wird verwendet.` });
     if (isNum(dD) && dD > 5) r.checks.push({ lvl: 'warn', t: `Öffnung nicht rechtwinklig: Diagonalen weichen ${mm(dD)} mm ab.` });
     if (isNum(dD) && dD <= 5) r.checks.push({ lvl: 'ok', t: `Diagonalen passen (${mm(dD)} mm Differenz).` });
+    // Außenmaß (z. B. Außenlaibung) gegenüber dem Rohbaumaß innen
+    if (isNum(o.outer.w) && isNum(W)) r.outerDW = o.outer.w - W;
+    if (isNum(o.outer.h) && isNum(H)) r.outerDH = o.outer.h - H;
+    if (isNum(r.outerDW) || isNum(r.outerDH)) {
+      const parts = [];
+      if (isNum(r.outerDW)) parts.push(`Breite ${r.outerDW >= 0 ? '+' : ''}${mm(r.outerDW)} mm${r.outerDW > 0 ? ` (je Seite ${mm(r.outerDW / 2)})` : ''}`);
+      if (isNum(r.outerDH)) parts.push(`Höhe ${r.outerDH >= 0 ? '+' : ''}${mm(r.outerDH)} mm`);
+      r.checks.push({ lvl: (r.outerDW > 0 || r.outerDH > 0) ? 'info' : 'ok', t: `Außenmaß gegenüber innen: ${parts.join(', ')}.${o.type === 'window' && (r.outerDW > 0 || r.outerDH > 0) ? ' Verbreiterungen prüfen.' : ''}` });
+    }
     if (o.type === 'door') {
       let Hoff = H;
       if (isNum(H) && o.heightRef === 'RFB') Hoff = H - (o.floorBuild || 0);
@@ -116,7 +131,7 @@ window.OpeningsModule = function (RA) {
       const nh = isNum(Hoff) ? NORM_H.find(([n]) => Hoff >= n && Hoff <= n + NORM_TOL) : null;
       r.norm = nw && nh ? { w: nw[0], h: nh[0], bw: nw[1], bh: nh[1] } : null;
       if (isNum(W) && isNum(Hoff)) {
-        if (r.norm) r.checks.unshift({ lvl: 'ok', t: `Normmaß: Rohbaurichtmaß ${r.norm.w} × ${r.norm.h} mm, Türblatt ${r.norm.bw} × ${r.norm.bh} mm.` });
+        if (r.norm) r.checks.unshift({ lvl: 'ok', t: `Normmaß: Rohbaurichtmaß ${r.norm.w} × ${r.norm.h} mm${isPass(o) ? '' : `, Türblatt ${r.norm.bw} × ${r.norm.bh} mm`}.` });
         else {
           const cw = NORM_W.reduce((a, b) => (Math.abs(b[0] - W) < Math.abs(a[0] - W) ? b : a));
           const ch = NORM_H.reduce((a, b) => (Math.abs(b[0] - Hoff) < Math.abs(a[0] - Hoff) ? b : a));
@@ -131,6 +146,9 @@ window.OpeningsModule = function (RA) {
     } else {
       r.orderW = isNum(W) ? W - 2 * (o.gapSide || 0) : null;
       r.orderH = isNum(H) ? H - (o.gapTop || 0) - (o.gapBottom || 0) : null;
+      const e = o.ext;
+      r.hasExt = !!(e.l || e.r || e.t || e.b);
+      if (r.hasExt && isNum(r.orderW)) { r.totalW = r.orderW + (e.l || 0) + (e.r || 0); r.totalH = r.orderH + (e.t || 0) + (e.b || 0); }
       const si = o.sillIn, so = o.sillOut;
       if (si.on && isNum(W)) r.sillIn = { L: W + 2 * (si.side || 0), T: isNum(si.reveal) ? si.reveal + (si.front || 0) + (si.insert || 0) : null };
       if (so.on && isNum(W)) r.sillOut = { L: W + 2 * (so.side || 0), T: isNum(so.reveal) ? so.reveal + (so.front || 0) + (so.insert || 0) : null };
@@ -149,6 +167,7 @@ window.OpeningsModule = function (RA) {
   const typeName = (o) => (o.type === 'door' ? 'Tür' : o.balcony ? 'Balkontür' : 'Fenster');
   const roomName = (o) => { const r = RA.P.rooms.find((x) => x.id === o.roomId); return r ? r.name : (o.location || ''); };
   function shortSpec(o) {
+    if (isPass(o)) return ['Durchgangszarge', 'ohne Türblatt'].join(' · ');
     if (o.type === 'door') return [`DIN ${o.din === 'L' ? 'links' : 'rechts'}`, o.doorType, o.frame].filter(Boolean).join(' · ');
     const s = o.sashTypes.slice(0, o.sashes).join(' | ');
     return [`${o.sashes}-flg. ${s}`, o.transom ? 'Oberlicht' : '', o.shutter !== 'kein' ? o.shutter : ''].filter(Boolean).join(' · ');
@@ -163,11 +182,11 @@ window.OpeningsModule = function (RA) {
     const rect = (x, y, w, h, cls, fill) => it.push({ t: 'rect', x, y, w, h, cls, fill });
     const line = (x1, y1, x2, y2, cls, dash) => it.push({ t: 'line', x1, y1, x2, y2, cls, dash });
     const text = (x, y, s, size, opts = {}) => it.push(Object.assign({ t: 'text', x, y, s, size }, opts));
-    // Öffnungssymbol: Spitze zeigt zur Bandseite
+    // Öffnungssymbol: Das Dreieck öffnet sich zur Anschlag-/Bandseite, die Spitze zeigt zur Griffseite.
     const sym = (x, y, w, h, kind) => {
-      const L = () => { line(x + w, y, x, y + h / 2, 'sym', true); line(x + w, y + h, x, y + h / 2, 'sym', true); };
-      const R = () => { line(x, y, x + w, y + h / 2, 'sym', true); line(x, y + h, x + w, y + h / 2, 'sym', true); };
-      const K = () => { line(x, y, x + w / 2, y + h, 'sym', true); line(x + w, y, x + w / 2, y + h, 'sym', true); };
+      const L = () => { line(x, y, x + w, y + h / 2, 'sym', true); line(x, y + h, x + w, y + h / 2, 'sym', true); }; // Bänder links
+      const R = () => { line(x + w, y, x, y + h / 2, 'sym', true); line(x + w, y + h, x, y + h / 2, 'sym', true); }; // Bänder rechts
+      const K = () => { line(x, y + h, x + w / 2, y, 'sym', true); line(x + w, y + h, x + w / 2, y, 'sym', true); }; // Kipp: Bänder unten
       if (kind === 'D-L') L();
       if (kind === 'D-R') R();
       if (kind === 'DK-L') { L(); K(); }
@@ -180,6 +199,12 @@ window.OpeningsModule = function (RA) {
     if (o.type === 'door') {
       const f = Math.max(40, B * 0.06);
       rect(0, 0, B, H, 'frame', 'frame');
+      if (isPass(o)) {
+        rect(f, f, B - 2 * f, H - f, 'open', 'open');
+        text(B / 2, H / 2, 'Durchgang', B * 0.1, { anchor: 'middle', cls: 'boxt' });
+        line(-B * 0.15, H, B * 1.15, H, 'floor');
+      }
+      if (!isPass(o)) {
       rect(f, f, B - 2 * f, H - f, 'leaf', 'leaf');
       const hingeLeft = o.din === 'L';
       const hx = hingeLeft ? f - 6 : B - f - 6;
@@ -189,6 +214,7 @@ window.OpeningsModule = function (RA) {
       if (o.doorType === 'Schiebetür') sym(f, f, B - 2 * f, H - f, 'S');
       else sym(f, f, B - 2 * f, H - f, hingeLeft ? 'D-L' : 'D-R');
       line(-B * 0.15, H, B * 1.15, H, 'floor');
+      }
     } else {
       let top = 0;
       if (o.shutter === 'Aufsatzkasten' || o.shutter === 'Vorbaukasten' || o.shutter === 'bestehender Kasten' || o.shutter === 'Raffstore') {
@@ -263,7 +289,7 @@ window.OpeningsModule = function (RA) {
     const s = Math.min(box.w / w, box.h / h);
     const ox = box.x + (box.w - w * s) / 2 - sh.minX * s, oy = box.y + (box.h - h * s) / 2 - sh.minY * s;
     const X = (x) => ox + x * s, Y = (y) => oy + y * s;
-    const fills = { frame: [235, 238, 244], leaf: [248, 249, 252], glass: [226, 236, 252], box: [214, 218, 226], hinge: [60, 64, 72] };
+    const fills = { frame: [235, 238, 244], leaf: [248, 249, 252], glass: [226, 236, 252], box: [214, 218, 226], hinge: [60, 64, 72], open: [255, 255, 255] };
     sh.items.forEach((e) => {
       if (e.t === 'rect') {
         doc.setDrawColor(40, 44, 52); doc.setLineWidth(e.cls === 'frame' ? 0.5 : 0.3);
@@ -428,6 +454,8 @@ window.OpeningsModule = function (RA) {
       main = `<div class="op-main"><span>Rohbauöffnung (kleinstes Maß)</span><b>${mm(c.W)} × ${mm(c.H)} mm</b></div>`;
       if (o.type === 'door' && o.heightRef !== 'OFF') main += `<div class="op-main sub"><span>Höhe ab Fertigfußboden</span><b>${mm(c.Hoff)} mm</b></div>`;
       if (o.type === 'window' && isNum(c.orderW)) main += `<div class="op-main sub"><span>Bestellmaß Rahmen</span><b>${mm(c.orderW)} × ${mm(c.orderH)} mm</b></div>`;
+      if (o.type === 'window' && isNum(c.totalW)) main += `<div class="op-main sub"><span>Gesamt inkl. Verbreiterungen</span><b>${mm(c.totalW)} × ${mm(c.totalH)} mm</b></div>`;
+      if (isNum(o.outer.w) || isNum(o.outer.h)) main += `<div class="op-main sub"><span>Außenmaß</span><b>${mm(o.outer.w)} × ${mm(o.outer.h)} mm</b></div>`;
     } else main = `<div class="op-main"><span>Rohbauöffnung</span><b class="muted">Breite und Höhe messen</b></div>`;
     return main + pills;
   }
@@ -474,9 +502,12 @@ window.OpeningsModule = function (RA) {
           ${numIn('w.0', o.w[0], 'oben', false, 'oben')}${numIn('w.1', o.w[1], 'Mitte', false, 'Mitte')}${numIn('w.2', o.w[2], 'unten', false, 'unten')}
           <span class="m-lbl">Höhe</span>
           ${numIn('h.0', o.h[0], 'links', false, 'links')}${numIn('h.1', o.h[1], 'Mitte', false, 'Mitte')}${numIn('h.2', o.h[2], 'rechts', false, 'rechts')}
-          <span class="m-lbl">Diagonale</span>
-          ${numIn('diag.0', o.diag[0], '↘', false, 'links oben → rechts unten')}${numIn('diag.1', o.diag[1], '↙', false, 'rechts oben → links unten')}<span></span>
+          <span class="m-lbl">Diag.</span>
+          ${numIn('diag.0', o.diag[0], '↘', false, 'LO → RU')}${numIn('diag.1', o.diag[1], '↙', false, 'RO → LU')}<span></span>
+          <span class="m-lbl">Außen</span>
+          ${numIn('outer.w', o.outer.w, 'Breite', false, 'Breite')}${numIn('outer.h', o.outer.h, 'Höhe', false, 'Höhe')}<span></span>
         </div>
+        <p class="hint" style="margin-top:8px">Diagonalen: LO → RU = links oben nach rechts unten. Außenmaß: Öffnung auf der Außen- bzw. Gegenseite, z. B. wegen Verbreiterungen oder Anschlag.</p>
         ${isDoor ? `
           <div class="grid2" style="margin-top:10px">
             ${sel('heightRef', o.heightRef, HREFS, 'Höhe gemessen')}
@@ -493,14 +524,17 @@ window.OpeningsModule = function (RA) {
       ${isDoor ? `
       <div class="card">
         <div class="card-head"><h3>Ausführung</h3></div>
-        <div class="field"><span>Anschlag</span>${seg('din', o.din, [['L', 'DIN links'], ['R', 'DIN rechts']])}</div>
-        <p class="hint">DIN links: Von der Seite gesehen, zu der die Tür aufgeht, sitzen die Bänder links.</p>
-        <div class="field"><span>Aufschlag</span>${seg('openIn', o.openIn ? '1' : '0', [['1', 'in den Raum'], ['0', 'aus dem Raum']])}</div>
-        <div class="grid2" style="margin-top:10px">
-          ${sel('doorType', o.doorType, DOOR_TYPES, 'Türart')}
+        <div class="grid2">
           ${sel('frame', o.frame, FRAMES, 'Zarge')}
-          ${sel('lock', o.lock, LOCKS, 'Schloss')}
-          ${txt('finish', o.finish, 'Oberfläche / Farbe', 'z. B. Weißlack, Glasausschnitt')}
+          ${isPass(o) ? '<span></span>' : sel('doorType', o.doorType, DOOR_TYPES, 'Türart')}
+        </div>
+        ${isPass(o) ? '<p class="hint" style="margin-top:8px">Durchgangszarge: Zarge ohne Türblatt – kein Anschlag und kein Schloss nötig.</p>' : `
+        <div class="field" style="margin-top:10px"><span>Anschlag</span>${seg('din', o.din, [['L', 'DIN links'], ['R', 'DIN rechts']])}</div>
+        <p class="hint">DIN links: Von der Seite gesehen, zu der die Tür aufgeht, sitzen die Bänder links.</p>
+        <div class="field"><span>Aufschlag</span>${seg('openIn', o.openIn ? '1' : '0', [['1', 'in den Raum'], ['0', 'aus dem Raum']])}</div>`}
+        <div class="grid2" style="margin-top:10px">
+          ${isPass(o) ? '' : sel('lock', o.lock, LOCKS, 'Schloss')}
+          ${txt('finish', o.finish, 'Oberfläche / Farbe', isPass(o) ? 'z. B. Weißlack' : 'z. B. Weißlack, Glasausschnitt')}
         </div>
       </div>` : `
       <div class="card">
@@ -529,6 +563,14 @@ window.OpeningsModule = function (RA) {
           ${numIn('gapTop', o.gapTop, '15', true, 'Fuge oben')}
           ${numIn('gapBottom', o.gapBottom, '30', true, 'unten (inkl. Profil)')}
         </div>
+        <div class="card-head" style="margin-top:14px"><h3>Verbreiterungen</h3>${isNum(o.outer.w) || isNum(o.outer.h) ? '<button class="btn small ghost" data-oact="extFromOuter">aus Außenmaß</button>' : ''}</div>
+        <div class="grid4">
+          ${numIn('ext.l', o.ext.l, '0', true, 'links')}
+          ${numIn('ext.r', o.ext.r, '0', true, 'rechts')}
+          ${numIn('ext.t', o.ext.t, '0', true, 'oben')}
+          ${numIn('ext.b', o.ext.b, '0', true, 'unten')}
+        </div>
+        <p class="hint" style="margin-top:6px">Gesamtmaß = Rahmen + Verbreiterungen. „aus Außenmaß“ verteilt den Unterschied außen/innen auf links, rechts und oben.</p>
       </div>
 
       <div class="card">
@@ -588,8 +630,8 @@ window.OpeningsModule = function (RA) {
   }
 
   // Felder, die die Formularstruktur ändern → komplett neu zeichnen
-  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony']);
-  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal',
+  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony', 'frame', 'outer.w', 'outer.h']);
+  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal', 'ext.l', 'ext.r', 'ext.t', 'ext.b',
     'sillIn.front', 'sillIn.side', 'sillIn.insert', 'sillOut.front', 'sillOut.side', 'sillOut.insert']);
   function setPath(o, path, v) {
     const ks = path.split('.');
@@ -736,6 +778,17 @@ window.OpeningsModule = function (RA) {
     if (act === 'del') { e.stopPropagation(); del(a.dataset.id, false); }
     if (act === 'delCur') { const o = cur(); if (o) del(o.id, true); }
     if (act === 'dup') dup();
+    if (act === 'extFromOuter') {
+      const o = cur();
+      if (!o) return;
+      const c = calc(o);
+      RA.snapshot();
+      if (isNum(c.outerDW) && c.outerDW > 0) { o.ext.l = Math.round(c.outerDW / 2); o.ext.r = Math.round(c.outerDW - o.ext.l); }
+      if (isNum(c.outerDH) && c.outerDH > 0) o.ext.t = Math.round(c.outerDH);
+      RA.persist();
+      renderEditor();
+      toast('Verbreiterungen aus dem Außenmaß übernommen');
+    }
     if (act === 'photo') showPhoto(a.dataset.pid);
   }, true);
   document.addEventListener('change', (e) => { if (e.target.closest('#openingBody')) onChange(e); });
@@ -763,7 +816,7 @@ window.OpeningsModule = function (RA) {
     if (doors.length) {
       ctx.heading('Türen');
       ctx.table([{ label: 'Pos', w: 14 }, { label: 'Raum / Ort', w: 38 }, { label: 'Stk', w: 10, align: 'right' }, { label: 'Rohbau B × H', w: 34, align: 'right' }, { label: 'Wand', w: 18, align: 'right' }, { label: 'DIN', w: 14 }, { label: 'Art / Zarge', w: 50 }],
-        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}` : '–', isNum(c.wallMin) ? (c.wallMax !== c.wallMin ? `${mm(c.wallMin)}–${mm(c.wallMax)}` : mm(c.wallMin)) : '–', o.din === 'L' ? 'links' : 'rechts', `${o.doorType}, ${o.frame}`] }; }), { rowH: 6 });
+        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}` : '–', isNum(c.wallMin) ? (c.wallMax !== c.wallMin ? `${mm(c.wallMin)}–${mm(c.wallMax)}` : mm(c.wallMin)) : '–', isPass(o) ? '–' : o.din === 'L' ? 'links' : 'rechts', isPass(o) ? 'Durchgangszarge' : `${o.doorType}, ${o.frame}`] }; }), { rowH: 6 });
     }
     if (wins.length) {
       ctx.heading('Fenster');
@@ -789,17 +842,23 @@ window.OpeningsModule = function (RA) {
       add('Höhe l / m / r', o.h.map(mm).join(' / ') + ' mm');
       if (isNum(o.diag[0]) || isNum(o.diag[1])) add('Diagonalen', `${mm(o.diag[0])} / ${mm(o.diag[1])} mm`);
       add('Maßgebend B × H', isNum(c.W) && isNum(c.H) ? `${mm(c.W)} × ${mm(c.H)} mm` : '–');
+      if (isNum(o.outer.w) || isNum(o.outer.h)) add('Außenmaß B × H', `${mm(o.outer.w)} × ${mm(o.outer.h)} mm`);
       if (o.type === 'door') {
         add('Höhe gemessen', HREFS.find((x) => x[0] === o.heightRef)[1] + (o.heightRef === 'RFB' ? `, Aufbau ${mm(o.floorBuild)} mm` : ''));
         if (o.heightRef !== 'OFF') add('Höhe ab OFF', `${mm(c.Hoff)} mm`);
         add('Wandstärke', isNum(c.wallMin) ? `${mm(c.wallMin)}${c.wallMax !== c.wallMin ? ` – ${mm(c.wallMax)}` : ''} mm` : '–');
-        add('Normmaß', c.norm ? `RRM ${c.norm.w} × ${c.norm.h}, Türblatt ${c.norm.bw} × ${c.norm.bh}` : c.near ? `Sondermaß (nächste Norm ${c.near.w} × ${c.near.h})` : '–');
-        add('Anschlag', `DIN ${o.din === 'L' ? 'links' : 'rechts'}, Aufschlag ${o.openIn ? 'in den Raum' : 'aus dem Raum'}`);
-        add('Türart / Zarge', `${o.doorType} / ${o.frame}`);
-        add('Schloss', o.lock);
+        add('Normmaß', c.norm ? `RRM ${c.norm.w} × ${c.norm.h}${isPass(o) ? '' : `, Türblatt ${c.norm.bw} × ${c.norm.bh}`}` : c.near ? `Sondermaß (nächste Norm ${c.near.w} × ${c.near.h})` : '–');
+        if (isPass(o)) add('Zarge', 'Durchgangszarge, ohne Türblatt');
+        else {
+          add('Anschlag', `DIN ${o.din === 'L' ? 'links' : 'rechts'}, Aufschlag ${o.openIn ? 'in den Raum' : 'aus dem Raum'}`);
+          add('Türart / Zarge', `${o.doorType} / ${o.frame}`);
+          add('Schloss', o.lock);
+        }
         add('Oberfläche', o.finish);
       } else {
         add('Bestellmaß Rahmen', isNum(c.orderW) ? `${mm(c.orderW)} × ${mm(c.orderH)} mm (Fugen ${mm(o.gapSide)}/${mm(o.gapTop)}/${mm(o.gapBottom)})` : '–');
+        if (c.hasExt) add('Verbreiterungen', `links ${mm(o.ext.l)}, rechts ${mm(o.ext.r)}, oben ${mm(o.ext.t)}, unten ${mm(o.ext.b)} mm`);
+        if (isNum(c.totalW)) add('Gesamtmaß inkl. Verbr.', `${mm(c.totalW)} × ${mm(c.totalH)} mm`);
         add('Brüstung ab OFF', isNum(o.parapet) ? `${mm(o.parapet)} mm` : '');
         add('Einbau', o.mount);
         add('Flügel / Öffnung', `${o.sashes}-flg.: ${o.sashTypes.slice(0, o.sashes).join(' | ')}${o.transom ? `, Oberlicht${isNum(o.transomH) ? ' ' + mm(o.transomH) + ' mm' : ''}` : ''}${o.balcony ? ', Balkontür' : ''}`);

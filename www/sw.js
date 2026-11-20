@@ -1,5 +1,5 @@
 // Offline-Cache für die Web-App (nicht in der iOS-App aktiv).
-const CACHE = 'raumaufmass-v4';
+const CACHE = 'raumaufmass-v5';
 const FILES = ['./', './index.html', './styles.css', './app.js', './openings.js', './manifest.webmanifest',
   './vendor/jspdf.umd.min.js', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 

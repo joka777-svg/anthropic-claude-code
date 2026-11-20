@@ -452,6 +452,9 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .op-main .muted { color: var(--muted); font-size: 15px; }
 .sill-res { display: flex; justify-content: space-between; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .sill-res span { color: var(--muted); font-size: 13px; font-weight: 600; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.grid4 .field input { text-align: center; }
+.p-open { fill: var(--surface); stroke: var(--wall); stroke-dasharray: 0; }
 .m-grid { display: grid; grid-template-columns: 78px 1fr 1fr 1fr; gap: 8px; align-items: end; }
 .m-lbl { font-weight: 800; font-size: 14px; padding-bottom: 12px; }
 .m-grid .field input { font-size: 17px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; padding: 9px 4px; }

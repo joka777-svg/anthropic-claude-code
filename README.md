@@ -22,7 +22,7 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
     - Das **Bestellmaß** ist die Öffnung abzüglich der Fugen.
   - **Fensterbänke innen und außen:** Länge und Tiefe werden aus Laibungstiefe, Überstand, seitlicher Einbindung und Einschub berechnet. Dazu kommt die Laibungsfläche innen.
   - **Fotos** je Position (Kamera oder Mediathek). Sie werden auf dem Gerät gespeichert.
-  - Für jede Position zeichnet die App eine **Ansicht** mit Öffnungssymbolen. Die Spitze des Symbols zeigt zur Bandseite.
+  - Für jede Position zeichnet die App eine **Ansicht** mit Öffnungssymbolen. Das Dreieck öffnet sich zur Anschlag- bzw. Bandseite, die Spitze zeigt zur Griffseite.
   - Im **PDF** erscheinen Tabellen für Türen, Fenster und Fensterbänke. Dazu kommt je Position ein Detailblock mit Zeichnung, allen Werten und Fotos.
   - Zahlen ohne Einheit liest die App so:
     - Breite und Höhe: 885 als mm, 88,5 als cm, 0,885 als m vom Laser.
