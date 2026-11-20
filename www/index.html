@@ -55,6 +55,7 @@
     <section class="panel">
       <div class="panel-tabs" role="tablist">
         <button data-tab="walls" class="active">Wände</button>
+        <button data-tab="measure">📏 Messen</button>
         <button data-tab="doors">Türen</button>
         <button data-tab="extra">Abzüge</button>
         <button data-tab="result">Ergebnis</button>
@@ -75,7 +76,7 @@
         <label><input type="radio" name="shape" value="quad"><span>⏢ Schiefes Viereck</span></label>
         <label><input type="radio" name="shape" value="trap"><span>⏥ Trapez</span></label>
         <label><input type="radio" name="shape" value="L"><span>⌐ L-Form</span></label>
-        <label><input type="radio" name="shape" value="draw"><span>✎ Frei zeichnen</span></label>
+        <label><input type="radio" name="shape" value="draw"><span>✎ Skizzieren &amp; messen</span></label>
       </div>
       <div class="shape-fields" data-shape="rect">
         <label class="field"><span>Länge (m)</span><input name="rect_a" inputmode="decimal" value="5,00"></label>
@@ -114,7 +115,7 @@
         </div>
       </div>
       <div class="shape-fields" data-shape="draw" hidden>
-        <p class="hint">Tippe im Grundriss nacheinander auf die Ecken. Tippe zum Schließen auf die erste Ecke. Danach kannst du die Wandlängen genau eintragen.</p>
+        <p class="hint">Tippe im Grundriss nacheinander auf die Ecken – die Maße müssen nicht stimmen. Tippe zum Schließen auf die erste Ecke. Danach misst du Wand für Wand mit dem Laser und die App rechnet die Skizze auf die echten Maße um.</p>
       </div>
       <p class="form-error" id="roomError"></p>
       <div class="dialog-actions">

@@ -9,6 +9,15 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
   - Für jede Wand trägst du Länge und Innenwinkel ein.
   - Ecken kannst du frei verschieben. Der Fang richtet sie am 5-cm-Raster und an anderen Ecken aus.
   - Über ⊕ fügst du in einer Wand eine neue Ecke ein.
+- **Mit dem Laser aufmessen** (Tab „📏 Messen“):
+  1. Du skizzierst den Raum grob mit dem Finger. Die Maße müssen dabei nicht stimmen.
+  2. Du gehst Wand für Wand vor: Laserwert eintragen, Enter drücken, die App springt zur nächsten Wand.
+  3. Die App bringt die Skizze automatisch auf die echten Maße. Fläche und Sockelleiste werden sofort neu berechnet.
+  - Ecken, die fast 90° haben, werden als 90° angenommen.
+  - Bei schiefen Räumen misst du zusätzlich eine Diagonale von Ecke zu Ecke, damit die Form exakt stimmt.
+  - Messwerte gibst du in m (4,235), cm (423,5 oder „423,5 cm“) oder mm („4235 mm“) ein.
+  - Passen die Werte nicht zusammen, warnt die App.
+  - Laser mit Tastatur-Modus wie viele Leica DISTO können den Wert direkt ins Feld schreiben.
 - **Türen:**
   - Im Werkzeug „Tür“ tippst du auf eine Wand. Die Tür lässt sich dann entlang der Wand verschieben.
   - Die Breite der Türöffnung wird von der Sockelleiste **abgezogen**.

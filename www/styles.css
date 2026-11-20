@@ -137,6 +137,10 @@ input, select, textarea { font-size: 16px; } /* verhindert Auto-Zoom auf iOS */
 .door-sel .door-line { stroke-width: 3.5; }
 .dim { font-size: 13px; fill: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .dim.closing { fill: var(--muted); font-style: italic; }
+.dim.measured { fill: #15803d; }
+.diag { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.dim.diag-t { fill: var(--muted); font-weight: 600; }
+@media (prefers-color-scheme: dark) { .dim.measured { fill: #4ade80; } }
 .vertex { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5; }
 .vertex.sel { fill: var(--sel); stroke: var(--sel); }
 .vertex-hit { fill: transparent; cursor: grab; }
@@ -177,6 +181,17 @@ input, select, textarea { font-size: 16px; } /* verhindert Auto-Zoom auf iOS */
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 4px 0; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+.ok { color: #15803d; font-size: 13px; margin: 6px 0; font-weight: 600; }
+.meas-current { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin: 6px 0 4px; }
+.meas-wall { font-size: 20px; font-weight: 800; color: var(--accent); margin-bottom: 8px; }
+.meas-input {
+  width: 100%; font-size: 30px !important; font-weight: 700; text-align: center; padding: 10px; border-radius: 10px;
+  border: 2px solid var(--accent); background: var(--surface); color: var(--text); font-variant-numeric: tabular-nums;
+}
+.meas-nav { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; margin-top: 8px; }
+.meas-result { display: flex; justify-content: space-around; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.meas-result b { font-size: 17px; }
+.diag-row { margin-bottom: 8px; flex-wrap: wrap; }
 .warn { color: var(--danger); font-size: 13px; margin: 6px 0; font-weight: 600; }
 
 table.walls { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }

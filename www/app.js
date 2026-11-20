@@ -169,6 +169,170 @@
     },
   };
 
+  // ---------------------------------------------------------------- Aufmaß-Rechner
+  /* Bringt eine grobe Skizze auf die gemessenen Längen (Laser).
+   * Ausgleichsrechnung (Levenberg-Marquardt) über alle Eckpunkte:
+   *  - gemessene Wände und Diagonalen: harte Bedingungen
+   *  - Winkel: nahezu rechte Winkel der Skizze werden als 90° angenommen (Option), sonst Winkel der Skizze (weich)
+   *  - ungemessene Wände: sehr weich an die Skizze gebunden */
+  const Solver = {
+    snapRight(a, tol = 10) {
+      if (Math.abs(a - 90) <= tol) return 90;
+      if (Math.abs(a - 270) <= tol) return 270;
+      return null;
+    },
+    linSolve(A, b) {
+      const n = b.length;
+      const M = A.map((row, i) => row.concat([b[i]]));
+      for (let c = 0; c < n; c++) {
+        let piv = c;
+        for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+        if (Math.abs(M[piv][c]) < 1e-14) return null;
+        [M[c], M[piv]] = [M[piv], M[c]];
+        for (let r = c + 1; r < n; r++) {
+          const f = M[r][c] / M[c][c];
+          if (f) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+        }
+      }
+      const x = new Array(n).fill(0);
+      for (let r = n - 1; r >= 0; r--) {
+        let s = M[r][n];
+        for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+        x[r] = s / M[r][r];
+      }
+      return x;
+    },
+    solve(sketch, meas) {
+      const n = sketch.length;
+      const s = G.orient(sketch);
+      const sk = G.walls(sketch).map((w) => w.len);
+      const angS = G.interiorAngles(sketch);
+      const mw = (i) => (meas.walls[i] > 0 ? meas.walls[i] : 0);
+      const diags = meas.diags.filter((d) => d.len > 0 && d.a !== d.b && d.a < n && d.b < n);
+      // Maßstab der Skizze an die Messwerte angleichen (Median)
+      const ratios = [];
+      for (let i = 0; i < n; i++) if (mw(i) && sk[i] > 1e-6) ratios.push(mw(i) / sk[i]);
+      diags.forEach((d) => { const l = G.len(sketch[d.a], sketch[d.b]); if (l > 1e-6) ratios.push(d.len / l); });
+      ratios.sort((x, y) => x - y);
+      const k = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
+      const p0 = sketch[0];
+      const start = sketch.map((q) => ({ x: p0.x + (q.x - p0.x) * k, y: p0.y + (q.y - p0.y) * k }));
+      const skLen = sk.map((l) => l * k);
+      let snapped = 0;
+      const targets = angS.map((a) => {
+        const r = meas.ortho ? Solver.snapRight(a) : null;
+        if (r != null) { snapped++; return { v: rad(r), w: 3 }; }
+        return { v: rad(a), w: 0.3 };
+      });
+      const u0 = G.walls(start)[0].u;
+      const X0 = start[0];
+      const P = (x, i) => { i = ((i % n) + n) % n; return { x: x[2 * i], y: x[2 * i + 1] }; };
+      const resid = (x) => {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const L = G.len(P(x, i), P(x, i + 1));
+          out.push(mw(i) ? 100 * (L - mw(i)) : 0.05 * (L - skLen[i]));
+        }
+        diags.forEach((d) => out.push(100 * (G.len(P(x, d.a), P(x, d.b)) - d.len)));
+        for (let i = 0; i < n; i++) {
+          const a = P(x, i - 1), b = P(x, i), c = P(x, i + 1);
+          const d1x = b.x - a.x, d1y = b.y - a.y, d2x = c.x - b.x, d2y = c.y - b.y;
+          const turn = Math.atan2(d1x * d2y - d1y * d2x, d1x * d2x + d1y * d2y);
+          out.push(targets[i].w * (Math.PI - s * turn - targets[i].v));
+        }
+        out.push(100 * (x[0] - X0.x), 100 * (x[1] - X0.y));
+        const p1 = P(x, 1);
+        out.push(100 * (u0.x * (p1.y - x[1]) - u0.y * (p1.x - x[0])));
+        return out;
+      };
+      const cost = (r) => r.reduce((t, v) => t + v * v, 0);
+      let x = start.flatMap((q) => [q.x, q.y]);
+      let r = resid(x), c = cost(r), lambda = 1e-3;
+      const N = x.length;
+      for (let it = 0; it < 150 && c > 1e-16; it++) {
+        const J = r.map(() => new Array(N).fill(0));
+        for (let j = 0; j < N; j++) {
+          const h = 1e-7;
+          const xh = x.slice(); xh[j] += h;
+          const rh = resid(xh);
+          for (let i = 0; i < r.length; i++) J[i][j] = (rh[i] - r[i]) / h;
+        }
+        const A = Array.from({ length: N }, () => new Array(N).fill(0));
+        const g = new Array(N).fill(0);
+        for (let i = 0; i < r.length; i++) {
+          const Ji = J[i];
+          for (let p = 0; p < N; p++) {
+            if (!Ji[p]) continue;
+            g[p] += Ji[p] * r[i];
+            for (let q = 0; q < N; q++) A[p][q] += Ji[p] * Ji[q];
+          }
+        }
+        let improved = false;
+        for (let tries = 0; tries < 12; tries++) {
+          const Ad = A.map((row, p) => row.map((v, q) => (p === q ? v + lambda * (v + 1e-9) : v)));
+          const d = Solver.linSolve(Ad, g.map((v) => -v));
+          if (!d) { lambda *= 10; continue; }
+          const xn = x.map((v, i) => v + d[i]);
+          const rn = resid(xn), cn = cost(rn);
+          if (cn < c) {
+            const gain = c - cn;
+            x = xn; r = rn; c = cn; lambda = Math.max(lambda / 3, 1e-9); improved = true;
+            if (gain < 1e-14) it = 1e9;
+            break;
+          }
+          lambda *= 4;
+        }
+        if (!improved) break;
+      }
+      const pts = Array.from({ length: n }, (_, i) => roundPt(P(x, i)));
+      let maxDev = 0;
+      for (let i = 0; i < n; i++) if (mw(i)) maxDev = Math.max(maxDev, Math.abs(G.len(pts[i], pts[(i + 1) % n]) - mw(i)));
+      diags.forEach((d) => { maxDev = Math.max(maxDev, Math.abs(G.len(pts[d.a], pts[d.b]) - d.len)); });
+      const measured = Array.from({ length: n }, (_, i) => mw(i)).filter(Boolean).length;
+      // Wie stark weichen die als 90° angenommenen Ecken ab? (z. B. gegenüberliegende Wände unterschiedlich lang)
+      const angR = G.interiorAngles(pts);
+      let angDev = 0;
+      targets.forEach((t, i) => { if (t.w === 3) angDev = Math.max(angDev, Math.abs(angR[i] - deg(t.v))); });
+      const missingDiag = Math.max(0, 2 * n - 3 - (n + diags.length + Math.min(snapped, n - 1)));
+      return { points: pts, maxDev, angDev, measured, missingDiag, snapped };
+    },
+  };
+
+  /** Messwerte anwenden: Skizze merken und auf die Messwerte bringen. */
+  function applyMeasure(r) {
+    const m = r.meas;
+    const n = r.points.length;
+    if (n < 3) return null;
+    if (!m.sketch || m.sketch.length !== n) m.sketch = r.points.map((q) => ({ x: q.x, y: q.y }));
+    const any = m.walls.some((v) => v > 0) || m.diags.some((d) => d.len > 0);
+    if (!any) { r.points = m.sketch.map(roundPt); return null; }
+    const res = Solver.solve(m.sketch, m);
+    r.points = res.points;
+    return res;
+  }
+  function measInfo(r) {
+    const m = r.meas, n = r.points.length;
+    if (n < 3) return null;
+    const sketch = m.sketch && m.sketch.length === n ? m.sketch : r.points;
+    const any = m.walls.some((v) => v > 0) || m.diags.some((d) => d.len > 0);
+    if (!any) return { measured: 0, maxDev: 0, missingDiag: 0, sketch };
+    const res = Solver.solve(sketch, m);
+    return Object.assign(res, { sketch });
+  }
+  /** Laserwert lesen: „4,235“, „4.235 m“, „423,5 cm“, „4235 mm“; ohne Einheit: > 30 → cm, > 3000 → mm. */
+  function parseLaser(s) {
+    const t = String(s ?? '').trim().toLowerCase().replace(/\s/g, '');
+    const mt = t.match(/-?\d+(?:[.,]\d+)?/);
+    if (!mt) return NaN;
+    let v = Number(mt[0].replace(',', '.'));
+    if (/mm/.test(t)) v /= 1000;
+    else if (/cm/.test(t)) v /= 100;
+    else if (!/m/.test(t)) { if (v > 3000) v /= 1000; else if (v > 30) v /= 100; }
+    return v;
+  }
+  /** Bei manueller Änderung der Geometrie: Skizze verwerfen (Messwerte bleiben erhalten). */
+  const dropSketch = (r) => { if (r && r.meas) r.meas.sketch = null; };
+
   // ---------------------------------------------------------------- Daten
   const STORE = 'raumaufmass.db.v1';
   const DEFAULT_DOOR = 0.86;
@@ -182,7 +346,10 @@
     };
   }
   function newRoom(name, points) {
-    return { id: uid(), name, points: (points || []).map(roundPt), doors: [], extras: [] };
+    return { id: uid(), name, points: (points || []).map(roundPt), doors: [], extras: [], meas: newMeas() };
+  }
+  function newMeas() {
+    return { walls: [], diags: [], ortho: true, sketch: null };
   }
   function newDoor(wall, pos, width = DEFAULT_DOOR) {
     return { id: uid(), name: 'Tür', wall, pos: r4(pos), width, reveal: 0, revealSkirting: false, revealArea: false, hingeEnd: false, swingOut: false };
@@ -205,6 +372,7 @@
       id: r.id || uid(), name: r.name || 'Raum', points: (r.points || []).map((q) => ({ x: +q.x || 0, y: +q.y || 0 })),
       doors: (r.doors || []).map((x) => Object.assign(newDoor(0, 0), x)),
       extras: (r.extras || []).map((x) => Object.assign({ id: uid(), name: 'Abzug', kind: 'sub', w: 0, d: 0, count: 1, skirt: false }, x)),
+      meas: Object.assign(newMeas(), r.meas || {}),
     }));
     return p;
   }
@@ -234,6 +402,7 @@
 
   const ui = {
     tab: 'walls',
+    measIdx: 0,
     mode: 'edit',
     sel: null, // {type:'wall'|'vertex'|'door', i|id}
     snap: true,
@@ -323,6 +492,7 @@
   function editWall(r, idx, newLen, newAng) {
     const p = r.points, n = p.length;
     if (n < 3 || idx < 0 || idx > n - 2) return;
+    dropSketch(r);
     const walls = G.walls(p);
     if (newLen != null && newAng == null && G.isOrtho(p)) {
       // Rechtwinklige Räume: "Strecken" – alles jenseits der Wand verschieben, rechte Winkel bleiben erhalten.
@@ -355,6 +525,13 @@
     const L1 = w.len * t;
     const np = roundPt({ x: w.a.x + w.u.x * L1, y: w.a.y + w.u.y * L1 });
     r.points.splice(i + 1, 0, np);
+    const m = r.meas;
+    if (m) {
+      while (m.walls.length < r.points.length - 1) m.walls.push(0);
+      m.walls.splice(i, 1, 0, 0); // geteilte Wand muss neu gemessen werden
+      m.diags.forEach((d) => { if (d.a > i) d.a++; if (d.b > i) d.b++; });
+      m.sketch = null;
+    }
     r.doors.forEach((d) => {
       if (d.wall > i) d.wall++;
       else if (d.wall === i && d.pos >= L1 - 1e-6) { d.wall = i + 1; d.pos = r4(d.pos - L1); }
@@ -374,6 +551,14 @@
       else d.wall = map(d.wall);
     });
     r.points.splice(v, 1);
+    const m = r.meas;
+    if (m) {
+      while (m.walls.length < n) m.walls.push(0);
+      m.walls.splice(v, 1);
+      m.walls[map(prev)] = 0; // zusammengelegte Wand neu messen
+      m.diags = m.diags.filter((d) => d.a !== v && d.b !== v).map((d) => ({ ...d, a: d.a > v ? d.a - 1 : d.a, b: d.b > v ? d.b - 1 : d.b }));
+      m.sketch = null;
+    }
     return true;
   }
 
@@ -490,7 +675,19 @@
             <line class="door-hit" data-door="${d.id}" x1="${s1.x}" y1="${s1.y}" x2="${s2.x}" y2="${s2.y}"/>
           </g>`);
         });
+        // Diagonalen
+        const m = r.meas;
+        m.diags.forEach((d) => {
+          if (!(d.a < p.length && d.b < p.length)) return;
+          const a = toS(p[d.a]), b = toS(p[d.b]);
+          parts.push(`<line class="diag" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
+          if (d.len > 0) {
+            const mx = a.x + (b.x - a.x) * 0.28, my = a.y + (b.y - a.y) * 0.28, ang = -textAlong(p[d.a], p[d.b]);
+            parts.push(`<text class="dim diag-t" x="${mx}" y="${my - 8}" text-anchor="middle" transform="rotate(${ang.toFixed(2)} ${mx} ${my})">${fmt(d.len)}</text>`);
+          }
+        });
         // Maße
+        const anyMeas = m.walls.some((v) => v > 0);
         const s = G.orient(p);
         c.walls.forEach((w, i) => {
           if (w.len * k < 28) return;
@@ -500,7 +697,9 @@
           const off = 16;
           const tx = sm.x + out.x * off, ty = sm.y - out.y * off;
           const ang = -textAlong(w.a, w.b);
-          parts.push(`<text class="dim${i === p.length - 1 ? '' : ''}" x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${ang.toFixed(2)} ${tx} ${ty})">${fmt(w.len)}</text>`);
+          const measured = m.walls[i] > 0;
+          const label = anyMeas && !measured ? `≈${fmt(w.len)}` : fmt(w.len);
+          parts.push(`<text class="dim${measured ? ' measured' : anyMeas ? ' closing' : ''}" x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${ang.toFixed(2)} ${tx} ${ty})">${label}</text>`);
         });
         // Fläche
         const lp = toS(G.labelPoint(p));
@@ -694,7 +893,7 @@
         break;
       case 'vertex': {
         if (!gesture.moved || !r) return;
-        if (!gesture.snapped) { snapshot(); gesture.snapped = true; }
+        if (!gesture.snapped) { snapshot(); gesture.snapped = true; dropSketch(r); }
         const w = toW(pt.x, pt.y);
         r.points[gesture.i] = snapVertex(r, gesture.i, { x: w.x + gesture.off.x, y: w.y + gesture.off.y });
         renderPlan();
@@ -765,9 +964,15 @@
           toast('Tür eingesetzt – Maße unter „Türen“ anpassen');
         } else {
           ui.sel = { type: 'wall', i: g.i };
-          if (ui.tab !== 'walls') ui.tab = 'walls';
-          renderAll();
-          scrollPanelTo(`[data-k="row-${g.i}"]`);
+          if (ui.tab === 'measure') {
+            ui.measIdx = g.i;
+            renderAll();
+            setMeasInput(true);
+          } else {
+            if (ui.tab !== 'walls') ui.tab = 'walls';
+            renderAll();
+            scrollPanelTo(`[data-k="row-${g.i}"]`);
+          }
         }
         break;
       case 'vertex':
@@ -844,13 +1049,16 @@
     mutate(() => {
       r.points = pts.map(roundPt);
       r.doors = [];
+      r.meas = newMeas();
     });
     ui.draft = [];
     ui.mode = 'edit';
-    ui.tab = 'walls';
+    ui.tab = 'measure';
+    ui.measIdx = 0;
+    ui.sel = { type: 'wall', i: 0 };
     fit();
     renderAll();
-    toast('Raum geschlossen – Wandlängen können jetzt genau eingetragen werden');
+    toast('Skizze fertig – jetzt Wand für Wand mit dem Laser messen');
   }
 
   // ---------------------------------------------------------------- Panel
@@ -908,6 +1116,67 @@
           <tbody>${rows}</tbody>
         </table>
       </div>`;
+  }
+
+  function panelMeasure(r) {
+    if (!r) return `<div class="card"><p>Kein Raum vorhanden.</p><button class="btn primary" data-act="newRoom">+ Raum anlegen</button></div>`;
+    const n = r.points.length;
+    if (n < 3) return `<div class="card"><p class="hint">Zuerst den Raum skizzieren: oben „Zeichnen“ wählen und die Ecken antippen.</p></div>`;
+    const m = r.meas;
+    const i = clamp(ui.measIdx, 0, n - 1);
+    const info = measInfo(r);
+    const skW = G.walls(info.sketch);
+    const name = (j) => `${letter(j)}–${letter((j + 1) % n)}`;
+    const cur = m.walls[i] > 0 ? fmtIn(m.walls[i], 3) : '';
+    const doneCount = Array.from({ length: n }, (_, j) => m.walls[j] > 0).filter(Boolean).length;
+    let status = '';
+    if (doneCount < n) status = `<p class="hint" style="margin:6px 0 0">Noch ${n - doneCount} von ${n} Wänden messen.</p>`;
+    else if (info.maxDev > 0.01) status = `<p class="warn">⚠ Die Maße passen nicht ganz zusammen (Abweichung bis ${fmt(info.maxDev * 100, 1)} cm). Bitte Messwerte prüfen${info.missingDiag ? ' oder eine Diagonale messen' : ''}.</p>`;
+    else if (info.missingDiag) status = `<p class="warn" style="color:var(--door)">Alle Wände gemessen ✓ – Der Raum hat schiefe Ecken: Für die genaue Form noch ${info.missingDiag} Diagonale${info.missingDiag > 1 ? 'n' : ''} messen (unten). Sonst werden die Winkel aus der Skizze übernommen.</p>`;
+    else if (info.angDev > 0.5) status = `<p class="warn" style="color:var(--door)">Alle Wände gemessen ✓ – Gegenüberliegende Wände sind unterschiedlich lang, der Raum ist daher nicht ganz rechtwinklig (bis ${fmt(info.angDev, 1)}° Abweichung). Zur Kontrolle eine Diagonale messen.</p>`;
+    else status = `<p class="ok">✓ Alle Wände gemessen – Form vollständig bestimmt.</p>`;
+    const c = calcRoom(r);
+    const rows = skW.map((w, j) => `<tr data-k="mrow-${j}" class="${j === i ? 'sel' : ''}" data-act="measGo" data-i="${j}">
+        <td class="wname">${name(j)}</td>
+        <td data-k="mval-${j}" data-h>${m.walls[j] > 0 ? `<b>${fmt(m.walls[j], 3)} m</b> ✓` : '<span class="ro">offen</span>'}</td>
+        <td class="ro" data-k="msk-${j}" data-h>${m.walls[j] > 0 ? '' : `Skizze ≈ ${fmt(G.len(r.points[j], r.points[(j + 1) % n]), 2)}`}</td>
+      </tr>`).join('');
+    const opt = (sel) => r.points.map((_, j) => `<option value="${j}" ${j === sel ? 'selected' : ''}>${letter(j)}</option>`).join('');
+    const diags = m.diags.map((d) => `<div class="row diag-row" data-k="diag-${d.id}">
+        <span>Diagonale</span>
+        <select class="cell-input" style="width:auto" ${inputAttrs(`dga-${d.id}`, 'diagA', `data-id="${d.id}"`)}>${opt(d.a)}</select>
+        <span>–</span>
+        <select class="cell-input" style="width:auto" ${inputAttrs(`dgb-${d.id}`, 'diagB', `data-id="${d.id}"`)}>${opt(d.b)}</select>
+        <input class="cell-input" style="max-width:110px" inputmode="decimal" placeholder="Messwert" ${inputAttrs(`dgl-${d.id}`, 'diagLen', `data-id="${d.id}"`)} value="${d.len > 0 ? fmtIn(d.len, 3) : ''}">
+        <button class="icon-btn" title="Diagonale löschen" data-act="delDiag" data-id="${d.id}">✕</button>
+      </div>`).join('');
+    return `
+      <div class="card meas-card">
+        <div class="card-head"><h3>Mit Laser aufmessen</h3><span class="hint" style="margin:0" data-k="mcount" data-h>${doneCount} / ${n} Wände</span></div>
+        <p class="hint">Raum grob skizzieren, dann Wand für Wand messen. Mit Enter geht es zur nächsten Wand. Die Skizze wird automatisch auf die echten Maße gebracht. Eingabe in m (4,235) oder cm (423,5).</p>
+        <div class="meas-current">
+          <div class="meas-wall" data-k="mcur" data-h>Wand ${name(i)}</div>
+          <input class="meas-input" data-k="meas-input" data-f="measLen" inputmode="decimal" enterkeyhint="next" autocomplete="off" placeholder="Messwert eingeben" value="${cur}">
+          <div class="meas-nav">
+            <button class="btn" data-act="measPrev">◀ Zurück</button>
+            <button class="btn ghost danger" data-act="measClear">Wert löschen</button>
+            <button class="btn primary" data-act="measNext">Weiter ▶</button>
+          </div>
+        </div>
+        <div data-k="mstatus" data-h>${status}</div>
+        <div class="meas-result" data-k="mresult" data-h><span><b>${fmt(c.net)} m²</b> Fläche</span><span><b>${fmt(c.skirting)} m</b> Sockelleiste</span></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Wände</h3><span class="hint" style="margin:0">Antippen zum Messen</span></div>
+        <table class="walls"><tbody>${rows}</tbody></table>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Diagonalen</h3><button class="btn small" data-act="addDiag">+ Diagonale</button></div>
+        <p class="hint">Nur nötig bei schiefen Räumen: Eine Diagonale von Ecke zu Ecke legt die Winkel exakt fest. Bei rechtwinkligen Räumen reichen die Wände.</p>
+        ${diags}
+        <label class="check"><input type="checkbox" ${inputAttrs('mortho', 'measOrtho')} ${m.ortho ? 'checked' : ''}> Fast rechte Ecken der Skizze als 90° annehmen</label>
+      </div>
+      <button class="btn block ghost danger" data-act="measReset">Alle Messwerte dieses Raums löschen</button>`;
   }
 
   function panelDoors(r) {
@@ -1072,6 +1341,7 @@
     const base = `${ui.tab}|${P.id}|${r ? r.id : '-'}`;
     switch (ui.tab) {
       case 'walls': return r ? `${base}|${r.points.length}|${G.isOrtho(r.points)}|${calcRoom(r).selfX}` : base;
+      case 'measure': return r ? `${base}|${r.points.length}|${r.meas.diags.map((d) => d.id).join(',')}` : base;
       case 'doors': return r ? `${base}|${r.doors.map((d) => d.id + d.wall + d.swingOut).join(',')}|${r.points.length}` : base;
       case 'extra': return r ? `${base}|${r.extras.map((x) => x.id + x.kind).join(',')}` : base;
       case 'result': return `${base}|${P.rooms.map((x) => x.id).join(',')}|${P.piece > 0}`;
@@ -1082,7 +1352,7 @@
 
   function renderPanel() {
     const r = room();
-    const html = { walls: panelWalls, doors: panelDoors, extra: panelExtras, result: panelResult, project: panelProject }[ui.tab](r);
+    const html = { walls: panelWalls, measure: panelMeasure, doors: panelDoors, extra: panelExtras, result: panelResult, project: panelProject }[ui.tab](r);
     const sig = panelSig();
     $$('.panel-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === ui.tab));
     if (sig !== lastSig) {
@@ -1116,7 +1386,21 @@
       const c = calcRoom(r);
       return `<button class="chip${r.id === P.activeRoom ? ' active' : ''}" data-act="selRoom" data-id="${r.id}">${esc(r.name)}<small>${fmt(c.net, 1)} m²</small></button>`;
     }).join('');
-    $('#roomTabs').innerHTML = tabs + `<button class="chip add" data-act="newRoom">+ Raum</button>`;
+    // Gleiche Räume: Knöpfe behalten und nur Text/Status ändern, damit ein gerade laufender Tipp nicht verloren geht.
+    const sig = P.rooms.map((r) => r.id).join(',');
+    const bar = $('#roomTabs');
+    if (bar.dataset.sig === sig) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = tabs;
+      [...tmp.children].forEach((el, i) => {
+        const cur = bar.children[i];
+        cur.className = el.className;
+        if (cur.innerHTML !== el.innerHTML) cur.innerHTML = el.innerHTML;
+      });
+    } else {
+      bar.innerHTML = tabs + `<button class="chip add" data-act="newRoom">+ Raum</button>`;
+      bar.dataset.sig = sig;
+    }
     $('#projTitle').textContent = P.name;
   }
 
@@ -1154,7 +1438,7 @@
         if (d) h = `<span class="note">${esc(d.name)}</span><button class="btn small danger" data-act="delDoor" data-id="${d.id}">Tür löschen</button>`;
       }
     }
-    bar.innerHTML = h;
+    if (bar.innerHTML !== h) bar.innerHTML = h;
     $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === ui.mode));
     $('#btnSnap').textContent = ui.snap ? 'Fang an' : 'Fang aus';
   }
@@ -1196,6 +1480,19 @@
         mutate(() => editWall(r, +el.dataset.i, null, n));
         break;
       }
+      case 'measLen': commitMeasure(el, false); return;
+      case 'diagLen': {
+        const n = v.trim() === '' ? 0 : parseLaser(v);
+        if (!(n >= 0)) { toast('Bitte eine gültige Länge eingeben'); return; }
+        mutate(() => { r.meas.diags.find((d) => d.id === el.dataset.id).len = n; reportMeasure(applyMeasure(r)); });
+        break;
+      }
+      case 'diagA': case 'diagB': {
+        const d = r.meas.diags.find((x) => x.id === el.dataset.id);
+        mutate(() => { d[f === 'diagA' ? 'a' : 'b'] = +v; applyMeasure(r); });
+        break;
+      }
+      case 'measOrtho': mutate(() => { r.meas.ortho = v; applyMeasure(r); }); break;
       case 'doorName': mutate(() => { door().name = v.trim() || 'Tür'; }); break;
       case 'doorWall': mutate(() => { const d = door(); d.wall = +v; d.pos = Math.min(d.pos, Math.max(0, G.walls(r.points)[d.wall].len - d.width)); }); break;
       case 'doorWidth': { const n = needNum(v); if (n == null) return; mutate(() => { door().width = n; }); break; }
@@ -1222,13 +1519,91 @@
   });
   // Eingabe mit „Return“ bestätigen
   panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset.f === 'measLen') { e.preventDefault(); commitMeasure(e.target, true); return; }
     if (e.key === 'Enter' && e.target.matches('input')) e.target.blur();
   });
 
+  // ---------------------------------------------------------------- Messen
+  function setMeasInput(focus) {
+    const r = room();
+    const inp = panel.querySelector('[data-k="meas-input"]');
+    if (!r || !inp) return;
+    const v = r.meas.walls[ui.measIdx];
+    inp.value = v > 0 ? fmtIn(v, 3) : '';
+    if (focus) { inp.focus(); inp.select(); }
+  }
+  function reportMeasure(res) {
+    if (res && res.maxDev > 0.01) toast(`Hinweis: Maße weichen bis ${fmt(res.maxDev * 100, 1)} cm voneinander ab`);
+  }
+  function measGo(i, focus = true) {
+    const r = room();
+    if (!r) return;
+    const n = r.points.length;
+    ui.measIdx = ((i % n) + n) % n;
+    ui.sel = { type: 'wall', i: ui.measIdx };
+    renderAll();
+    setMeasInput(focus);
+    scrollPanelTo(`[data-k="mrow-${ui.measIdx}"]`);
+  }
+  /** Messwert aus dem Eingabefeld übernehmen (optional zur nächsten offenen Wand springen). */
+  function commitMeasure(inp, advance) {
+    const r = room();
+    if (!r || r.points.length < 3) return;
+    const n = r.points.length;
+    const raw = inp.value.trim();
+    const i = ui.measIdx;
+    while (r.meas.walls.length < n) r.meas.walls.push(0);
+    if (raw !== '') {
+      const v = parseLaser(raw);
+      if (!(v > 0.01) || v > 500) { toast('Bitte einen gültigen Messwert eingeben (z. B. 4,235)'); inp.select(); return; }
+      if (Math.abs((r.meas.walls[i] || 0) - v) > 1e-9) {
+        let res;
+        mutate(() => { r.meas.walls[i] = r4(v); res = applyMeasure(r); fit(); });
+        reportMeasure(res);
+      }
+    }
+    if (!advance) return;
+    // nächste noch offene Wand, sonst einfach die nächste
+    let next = (i + 1) % n;
+    for (let s = 1; s <= n; s++) { const j = (i + s) % n; if (!(r.meas.walls[j] > 0)) { next = j; break; } }
+    const allDone = Array.from({ length: n }, (_, j) => r.meas.walls[j] > 0).every(Boolean);
+    if (allDone && raw !== '' && i === n - 1) toast('Alle Wände gemessen ✓');
+    measGo(next, true);
+  }
+
   // ---------------------------------------------------------------- Aktionen
   const actions = {
+    measGo: (el, e) => { if (e.target.closest('input,button,select')) return; measGo(+el.dataset.i); },
+    measNext: () => { const inp = panel.querySelector('[data-k="meas-input"]'); if (inp) commitMeasure(inp, true); },
+    measPrev: () => measGo(ui.measIdx - 1),
+    measClear: () => {
+      const r = room();
+      mutate(() => { r.meas.walls[ui.measIdx] = 0; applyMeasure(r); });
+      setMeasInput(false);
+    },
+    measReset: () => {
+      const r = room();
+      if (!confirm('Alle Messwerte dieses Raums löschen? Die Skizze wird wiederhergestellt.')) return;
+      mutate(() => { applyMeasure(Object.assign(r, { meas: Object.assign(r.meas, { walls: [], diags: [] }) })); });
+      measGo(0, false);
+    },
+    addDiag: () => {
+      const r = room();
+      const n = r.points.length;
+      if (n < 4) { toast('Ein Dreieck braucht keine Diagonale'); return; }
+      const used = new Set(r.meas.diags.map((d) => `${d.a}-${d.b}`));
+      let a = 0, b = 2;
+      outer: for (let x = 0; x < n; x++) for (let y = x + 2; y < n; y++) {
+        if (x === 0 && y === n - 1) continue;
+        if (!used.has(`${x}-${y}`)) { a = x; b = y; break outer; }
+      }
+      mutate(() => r.meas.diags.push({ id: uid(), a, b, len: 0 }));
+      const inp = panel.querySelector(`[data-k="dgl-${r.meas.diags[r.meas.diags.length - 1].id}"]`);
+      if (inp) inp.focus();
+    },
+    delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
-    selRoom: (el) => { P.activeRoom = el.dataset.id; ui.sel = null; ui.mode = ui.mode === 'draw' ? 'edit' : ui.mode; ui.draft = []; persist(); fit(); renderAll(); },
+    selRoom: (el) => { P.activeRoom = el.dataset.id; ui.sel = null; ui.measIdx = 0; ui.mode = ui.mode === 'draw' ? 'edit' : ui.mode; ui.draft = []; persist(); fit(); renderAll(); },
     delRoom: () => {
       const r = room();
       if (!r || !confirm(`Raum „${r.name}“ löschen?`)) return;
@@ -1329,7 +1704,12 @@
     const fn = actions[el.dataset.act];
     if (fn) fn(el, e);
   });
-  $$('.panel-tabs button').forEach((b) => b.addEventListener('click', () => { ui.tab = b.dataset.tab; renderPanel(); panel.scrollTop = 0; }));
+  $$('.panel-tabs button').forEach((b) => b.addEventListener('click', () => {
+    ui.tab = b.dataset.tab;
+    if (ui.tab === 'measure' && room()) { const n = room().points.length; ui.measIdx = clamp(ui.measIdx, 0, Math.max(0, n - 1)); ui.sel = { type: 'wall', i: ui.measIdx }; }
+    renderAll();
+    panel.scrollTop = 0;
+  }));
   $$('.seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   $('#btnFit').addEventListener('click', () => { fit(); renderPlan(); });
   $('#btnSnap').addEventListener('click', () => { ui.snap = !ui.snap; renderContext(); toast(ui.snap ? 'Fang an: 5-cm-Raster, Ausrichten, 15°-Winkel' : 'Fang aus: freie Position (1 cm)'); });
@@ -1581,10 +1961,17 @@
       setFont(12, 'bold'); doc.text('Wände', M, y); y += 2;
       const n = r.points.length;
       table(
-        [{ label: 'Wand', w: 30 }, { label: 'Länge', w: 40, align: 'right' }, { label: 'Innenwinkel an Anfangsecke', w: 60, align: 'right' }],
-        c.walls.map((w, i) => ({ cells: [`${letter(i)}–${letter((i + 1) % n)}`, `${fmt(w.len)} m`, `${fmt(c.angles[i], 1)}°`] })),
+        [{ label: 'Wand', w: 30 }, { label: 'Länge', w: 40, align: 'right' }, { label: 'Innenwinkel an Anfangsecke', w: 60, align: 'right' }, { label: 'Aufmaß', w: 48, align: 'right' }],
+        c.walls.map((w, i) => ({ cells: [`${letter(i)}–${letter((i + 1) % n)}`, `${fmt(w.len)} m`, `${fmt(c.angles[i], 1)}°`, r.meas.walls[i] > 0 ? `gemessen ${fmt(r.meas.walls[i], 3)} m` : (r.meas.walls.some((v) => v > 0) ? 'aus Skizze' : '')] })),
         { rowH: 5.6 },
       );
+      const dg = r.meas.diags.filter((d) => d.len > 0 && d.a < n && d.b < n);
+      if (dg.length) {
+        ensure(16);
+        setFont(12, 'bold'); doc.text('Diagonalen', M, y); y += 2;
+        table([{ label: 'Diagonale', w: 30 }, { label: 'gemessen', w: 40, align: 'right' }, { label: 'im Plan', w: 40, align: 'right' }],
+          dg.map((d) => ({ cells: [`${letter(d.a)}–${letter(d.b)}`, `${fmt(d.len, 3)} m`, `${fmt(G.len(r.points[d.a], r.points[d.b]), 3)} m`] })), { rowH: 5.6 });
+      }
       if (r.doors.length) {
         ensure(20);
         setFont(12, 'bold'); doc.text('Türen / Öffnungen', M, y); y += 2;
@@ -1673,6 +2060,11 @@
       const m = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
       doc.text(`${fmt(d.width)}`, m.x, m.y + 0.5, { align: 'center', baseline: 'middle' });
     });
+    // Diagonalen
+    doc.setDrawColor(120, 125, 135); doc.setLineWidth(0.2);
+    if (doc.setLineDashPattern) doc.setLineDashPattern([1.2, 1.2], 0);
+    r.meas.diags.filter((d) => d.len > 0 && d.a < p.length && d.b < p.length).forEach((d) => { const a = T(p[d.a]), bb = T(p[d.b]); doc.line(a.x, a.y, bb.x, bb.y); });
+    if (doc.setLineDashPattern) doc.setLineDashPattern([], 0);
     // Maße
     const so = G.orient(p);
     doc.setFont('helvetica', 'bold');
