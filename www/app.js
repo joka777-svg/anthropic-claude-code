@@ -319,6 +319,20 @@
     const res = Solver.solve(sketch, m);
     return Object.assign(res, { sketch });
   }
+  /** Alle Diagonalen eines Raums (Ecke zu Ecke, nicht benachbart) mit berechnetem und gemessenem Wert. */
+  function allDiags(r) {
+    const p = r.points, n = p.length, out = [];
+    if (n < 4) return out;
+    for (let a = 0; a < n; a++) {
+      for (let b = a + 2; b < n; b++) {
+        if (a === 0 && b === n - 1) continue;
+        const m = r.meas.diags.find((d) => d.len > 0 && Math.min(d.a, d.b) === a && Math.max(d.a, d.b) === b);
+        const calc = G.len(p[a], p[b]);
+        out.push({ a, b, calc, meas: m ? m.len : 0, dev: m ? calc - m.len : 0 });
+      }
+    }
+    return out;
+  }
   /** Laserwert lesen: „4,235“, „4.235 m“, „423,5 cm“, „4235 mm“; ohne Einheit: > 30 → cm, > 3000 → mm. */
   function parseLaser(s) {
     const t = String(s ?? '').trim().toLowerCase().replace(/\s/g, '');
@@ -401,7 +415,9 @@
   }
 
   const ui = {
-    tab: 'walls',
+    tab: 'measure',
+    screen: 'projects',
+    showDiag: false,
     measIdx: 0,
     mode: 'edit',
     sel: null, // {type:'wall'|'vertex'|'door', i|id}
@@ -569,12 +585,12 @@
   const toW = (sx, sy) => ({ x: (sx - W / 2) / ui.view.k + ui.view.cx, y: -(sy - H / 2) / ui.view.k + ui.view.cy });
 
   function resize() {
+    if (ui.screen !== 'room') return;
     const rc = svg.getBoundingClientRect();
-    const first = W === 300 && H === 300;
-    W = Math.max(50, rc.width);
-    H = Math.max(50, rc.height);
+    if (rc.width < 10 || rc.height < 10) return;
+    W = rc.width;
+    H = rc.height;
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    if (first) fit();
     renderPlan();
   }
   function fit() {
@@ -675,15 +691,16 @@
             <line class="door-hit" data-door="${d.id}" x1="${s1.x}" y1="${s1.y}" x2="${s2.x}" y2="${s2.y}"/>
           </g>`);
         });
-        // Diagonalen
+        // Diagonalen (gemessene immer, alle berechneten auf Wunsch)
         const m = r.meas;
-        m.diags.forEach((d) => {
-          if (!(d.a < p.length && d.b < p.length)) return;
+        allDiags(r).forEach((d) => {
+          if (!ui.showDiag && !d.meas) return;
           const a = toS(p[d.a]), b = toS(p[d.b]);
-          parts.push(`<line class="diag" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
-          if (d.len > 0) {
-            const mx = a.x + (b.x - a.x) * 0.28, my = a.y + (b.y - a.y) * 0.28, ang = -textAlong(p[d.a], p[d.b]);
-            parts.push(`<text class="dim diag-t" x="${mx}" y="${my - 8}" text-anchor="middle" transform="rotate(${ang.toFixed(2)} ${mx} ${my})">${fmt(d.len)}</text>`);
+          const ok = d.meas && Math.abs(d.dev) <= 0.005;
+          parts.push(`<line class="diag${d.meas ? (ok ? ' ok' : ' bad') : ''}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
+          if (G.len(p[d.a], p[d.b]) * k > 60) {
+            const mx = a.x + (b.x - a.x) * 0.2, my = a.y + (b.y - a.y) * 0.2, ang = -textAlong(p[d.a], p[d.b]);
+            parts.push(`<text class="dim diag-t${d.meas ? (ok ? ' ok' : ' bad') : ''}" x="${mx}" y="${my - 7}" text-anchor="middle" transform="rotate(${ang.toFixed(2)} ${mx} ${my})">${letter(d.a)}–${letter(d.b)} ${fmt(d.calc)}</text>`);
           }
         });
         // Maße
@@ -1119,63 +1136,70 @@
   }
 
   function panelMeasure(r) {
-    if (!r) return `<div class="card"><p>Kein Raum vorhanden.</p><button class="btn primary" data-act="newRoom">+ Raum anlegen</button></div>`;
+    if (!r) return '';
     const n = r.points.length;
-    if (n < 3) return `<div class="card"><p class="hint">Zuerst den Raum skizzieren: oben „Zeichnen“ wählen und die Ecken antippen.</p></div>`;
+    if (n < 3) return `<div class="card empty-card"><div class="big-icon">✎</div><p><b>Raum skizzieren</b></p><p class="hint">Tippe im Plan nacheinander auf die Ecken des Raums. Die Maße müssen noch nicht stimmen. Zum Schließen auf die erste Ecke tippen.</p></div>`;
     const m = r.meas;
     const i = clamp(ui.measIdx, 0, n - 1);
     const info = measInfo(r);
-    const skW = G.walls(info.sketch);
     const name = (j) => `${letter(j)}–${letter((j + 1) % n)}`;
     const cur = m.walls[i] > 0 ? fmtIn(m.walls[i], 3) : '';
     const doneCount = Array.from({ length: n }, (_, j) => m.walls[j] > 0).filter(Boolean).length;
     let status = '';
-    if (doneCount < n) status = `<p class="hint" style="margin:6px 0 0">Noch ${n - doneCount} von ${n} Wänden messen.</p>`;
-    else if (info.maxDev > 0.01) status = `<p class="warn">⚠ Die Maße passen nicht ganz zusammen (Abweichung bis ${fmt(info.maxDev * 100, 1)} cm). Bitte Messwerte prüfen${info.missingDiag ? ' oder eine Diagonale messen' : ''}.</p>`;
-    else if (info.missingDiag) status = `<p class="warn" style="color:var(--door)">Alle Wände gemessen ✓ – Der Raum hat schiefe Ecken: Für die genaue Form noch ${info.missingDiag} Diagonale${info.missingDiag > 1 ? 'n' : ''} messen (unten). Sonst werden die Winkel aus der Skizze übernommen.</p>`;
-    else if (info.angDev > 0.5) status = `<p class="warn" style="color:var(--door)">Alle Wände gemessen ✓ – Gegenüberliegende Wände sind unterschiedlich lang, der Raum ist daher nicht ganz rechtwinklig (bis ${fmt(info.angDev, 1)}° Abweichung). Zur Kontrolle eine Diagonale messen.</p>`;
-    else status = `<p class="ok">✓ Alle Wände gemessen – Form vollständig bestimmt.</p>`;
+    if (doneCount < n) status = `<div class="pill">Noch ${n - doneCount} von ${n} Wänden messen</div>`;
+    else if (info.maxDev > 0.01) status = `<div class="pill bad">⚠ Maße passen nicht zusammen – Abweichung bis ${fmt(info.maxDev * 100, 1)} cm. Bitte prüfen.</div>`;
+    else if (info.missingDiag) status = `<div class="pill warnp">Alle Wände ✓ – der Raum hat schiefe Ecken. Für die exakte Form noch ${info.missingDiag} Diagonale${info.missingDiag > 1 ? 'n' : ''} messen (unten).</div>`;
+    else if (info.angDev > 0.5) status = `<div class="pill warnp">Alle Wände ✓ – Raum nicht ganz rechtwinklig (bis ${fmt(info.angDev, 1)}°). Zur Kontrolle eine Diagonale messen.</div>`;
+    else status = `<div class="pill okp">✓ Alle Maße passen zusammen</div>`;
     const c = calcRoom(r);
-    const rows = skW.map((w, j) => `<tr data-k="mrow-${j}" class="${j === i ? 'sel' : ''}" data-act="measGo" data-i="${j}">
-        <td class="wname">${name(j)}</td>
-        <td data-k="mval-${j}" data-h>${m.walls[j] > 0 ? `<b>${fmt(m.walls[j], 3)} m</b> ✓` : '<span class="ro">offen</span>'}</td>
-        <td class="ro" data-k="msk-${j}" data-h>${m.walls[j] > 0 ? '' : `Skizze ≈ ${fmt(G.len(r.points[j], r.points[(j + 1) % n]), 2)}`}</td>
-      </tr>`).join('');
-    const opt = (sel) => r.points.map((_, j) => `<option value="${j}" ${j === sel ? 'selected' : ''}>${letter(j)}</option>`).join('');
-    const diags = m.diags.map((d) => `<div class="row diag-row" data-k="diag-${d.id}">
-        <span>Diagonale</span>
-        <select class="cell-input" style="width:auto" ${inputAttrs(`dga-${d.id}`, 'diagA', `data-id="${d.id}"`)}>${opt(d.a)}</select>
-        <span>–</span>
-        <select class="cell-input" style="width:auto" ${inputAttrs(`dgb-${d.id}`, 'diagB', `data-id="${d.id}"`)}>${opt(d.b)}</select>
-        <input class="cell-input" style="max-width:110px" inputmode="decimal" placeholder="Messwert" ${inputAttrs(`dgl-${d.id}`, 'diagLen', `data-id="${d.id}"`)} value="${d.len > 0 ? fmtIn(d.len, 3) : ''}">
-        <button class="icon-btn" title="Diagonale löschen" data-act="delDiag" data-id="${d.id}">✕</button>
-      </div>`).join('');
+    const pct = Math.round((doneCount / n) * 100);
+    const rows = r.points.map((_, j) => `<button class="wall-chip${j === i ? ' sel' : ''}${m.walls[j] > 0 ? ' done' : ''}" data-k="mrow-${j}" data-act="measGo" data-i="${j}">
+        <span class="wc-name">${name(j)}</span>
+        <span class="wc-val" data-k="mval-${j}" data-h>${m.walls[j] > 0 ? `${fmt(m.walls[j], 3)}` : `≈ ${fmt(G.len(r.points[j], r.points[(j + 1) % n]), 2)}`}</span>
+      </button>`).join('');
+    const diags = allDiags(r);
+    const drows = diags.map((d) => {
+      const key = `${d.a}-${d.b}`;
+      let st = '<span class="ro">–</span>';
+      if (d.meas) st = Math.abs(d.dev) <= 0.005 ? '<span class="okt">✓ passt</span>' : `<span class="badt">${d.dev > 0 ? '+' : '−'}${fmt(Math.abs(d.dev) * 100, 1)} cm</span>`;
+      return `<tr>
+        <td class="wname">${letter(d.a)}–${letter(d.b)}</td>
+        <td data-k="dgc-${key}" data-h>${fmt(d.calc, 3)}</td>
+        <td><input class="cell-input" inputmode="decimal" placeholder="messen" data-k="dgm-${key}" data-f="diagPair" data-a="${d.a}" data-b="${d.b}" value="${d.meas ? fmtIn(d.meas, 3) : ''}"></td>
+        <td data-k="dgs-${key}" data-h>${st}</td>
+      </tr>`;
+    }).join('');
     return `
       <div class="card meas-card">
-        <div class="card-head"><h3>Mit Laser aufmessen</h3><span class="hint" style="margin:0" data-k="mcount" data-h>${doneCount} / ${n} Wände</span></div>
-        <p class="hint">Raum grob skizzieren, dann Wand für Wand messen. Mit Enter geht es zur nächsten Wand. Die Skizze wird automatisch auf die echten Maße gebracht. Eingabe in m (4,235) oder cm (423,5).</p>
-        <div class="meas-current">
-          <div class="meas-wall" data-k="mcur" data-h>Wand ${name(i)}</div>
-          <input class="meas-input" data-k="meas-input" data-f="measLen" inputmode="decimal" enterkeyhint="next" autocomplete="off" placeholder="Messwert eingeben" value="${cur}">
-          <div class="meas-nav">
-            <button class="btn" data-act="measPrev">◀ Zurück</button>
-            <button class="btn ghost danger" data-act="measClear">Wert löschen</button>
-            <button class="btn primary" data-act="measNext">Weiter ▶</button>
+        <div class="meas-top">
+          <div>
+            <div class="meas-label">Wand messen</div>
+            <div class="meas-wall" data-k="mcur" data-h>${name(i)}</div>
           </div>
+          <div class="progress" data-k="mprog" data-h><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" class="pr-bg"/><circle cx="18" cy="18" r="15.5" class="pr-fg" stroke-dasharray="${pct * 0.974} 100"/></svg><span>${doneCount}/${n}</span></div>
+        </div>
+        <div class="meas-field">
+          <input class="meas-input" data-k="meas-input" data-f="measLen" inputmode="decimal" enterkeyhint="next" autocomplete="off" placeholder="0,000" value="${cur}">
+          <span class="meas-unit">m</span>
+        </div>
+        <div class="meas-nav">
+          <button class="btn" data-act="measPrev" aria-label="Vorherige Wand">‹</button>
+          <button class="btn ghost danger" data-act="measClear">Löschen</button>
+          <button class="btn primary" data-act="measNext">Weiter ›</button>
         </div>
         <div data-k="mstatus" data-h>${status}</div>
-        <div class="meas-result" data-k="mresult" data-h><span><b>${fmt(c.net)} m²</b> Fläche</span><span><b>${fmt(c.skirting)} m</b> Sockelleiste</span></div>
       </div>
       <div class="card">
-        <div class="card-head"><h3>Wände</h3><span class="hint" style="margin:0">Antippen zum Messen</span></div>
-        <table class="walls"><tbody>${rows}</tbody></table>
+        <div class="card-head"><h3>Wände</h3><span class="hint" style="margin:0">antippen zum Messen</span></div>
+        <div class="wall-chips">${rows}</div>
+        <div class="meas-result" data-k="mresult" data-h><div><b>${fmt(c.net)} m²</b><span>Fläche</span></div><div><b>${fmt(c.skirting)} m</b><span>Sockelleiste</span></div><div><b>${fmt(c.perim)} m</b><span>Umfang</span></div></div>
       </div>
-      <div class="card">
-        <div class="card-head"><h3>Diagonalen</h3><button class="btn small" data-act="addDiag">+ Diagonale</button></div>
-        <p class="hint">Nur nötig bei schiefen Räumen: Eine Diagonale von Ecke zu Ecke legt die Winkel exakt fest. Bei rechtwinkligen Räumen reichen die Wände.</p>
-        ${diags}
-        <label class="check"><input type="checkbox" ${inputAttrs('mortho', 'measOrtho')} ${m.ortho ? 'checked' : ''}> Fast rechte Ecken der Skizze als 90° annehmen</label>
-      </div>
+      ${diags.length ? `<div class="card">
+        <div class="card-head"><h3>Diagonalen</h3><span class="hint" style="margin:0">Kontrollmaße</span></div>
+        <p class="hint">Die App berechnet jede Diagonale von Ecke zu Ecke aus deinen Maßen. Ist der Raum verzogen (z. B. für Spanndecken wichtig), Diagonale messen und eintragen – die Zeichnung wird angeglichen und du siehst, ob alles zusammenpasst.</p>
+        <table class="walls diag-table"><thead><tr><th>Diagonale</th><th>berechnet</th><th>gemessen</th><th></th></tr></thead><tbody>${drows}</tbody></table>
+        <label class="check"><input type="checkbox" data-k="mortho" data-f="measOrtho" ${m.ortho ? 'checked' : ''}> Fast rechte Ecken der Skizze als 90° annehmen</label>
+      </div>` : ''}
       <button class="btn block ghost danger" data-act="measReset">Alle Messwerte dieses Raums löschen</button>`;
   }
 
@@ -1246,113 +1270,21 @@
       </div>`;
   }
 
-  function roomCalcTable(c) {
-    const line = (label, v, unit, cls = '') => `<tr class="${cls}"><td>${label}</td><td>${v} ${unit}</td></tr>`;
-    let a = line('Grundfläche laut Umriss', fmt(c.base), 'm²');
-    if (c.sub) a += line('− Abzüge (Säulen, Schächte …)', fmt(c.sub), 'm²', 'sub');
-    if (c.add) a += line('+ Zuschläge (Nischen …)', fmt(c.add), 'm²', 'sub');
-    if (c.revealA) a += line('+ Boden in Türdurchgängen', fmt(c.revealA), 'm²', 'sub');
-    a += line('Bodenfläche netto', fmt(c.net), 'm²', 'total');
-    let s = line('Umfang (alle Wände)', fmt(c.perim), 'm');
-    if (c.doorW) s += line(`− Türöffnungen (${c.doors.filter((d) => d.eff > 0).length})`, fmt(c.doorW), 'm', 'sub');
-    if (c.revealSk) s += line('+ Laibungen', fmt(c.revealSk), 'm', 'sub');
-    if (c.exSk) s += line('+ Säulen / Nischen', fmt(c.exSk), 'm', 'sub');
-    s += line('Sockelleiste', fmt(c.skirting), 'lfm', 'total');
-    return `<table class="calc">${a}</table><div style="height:12px"></div><table class="calc">${s}</table>`;
-  }
-
-  function panelResult(r) {
-    const pc = calcProject();
-    const roomBlock = r
-      ? `<div class="card"><div class="card-head"><h3>${esc(r.name)}</h3></div><div data-k="roomcalc" data-h>${roomCalcTable(calcRoom(r))}</div></div>`
-      : '';
-    const rows = pc.rooms.map((x) => `<tr><td>${esc(x.r.name)}</td><td>${fmt(x.c.net)}</td><td>${fmt(x.c.skirting)}</td></tr>`).join('');
-    return `
-      ${roomBlock}
-      <div class="card">
-        <div class="card-head"><h3>Alle Räume</h3></div>
-        <div data-k="alltable" data-h>
-          <table class="calc">
-            <thead><tr><th>Raum</th><th>m²</th><th>lfm Sockel</th></tr></thead>
-            <tbody>${rows}
-              <tr class="total"><td>Summe</td><td>${fmt(pc.net)}</td><td>${fmt(pc.skirting)}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-head"><h3>Material inkl. Verschnitt</h3></div>
-        <div class="grid3">
-          <label class="field"><span>Verschnitt Boden (%)</span><input inputmode="decimal" ${inputAttrs('wa', 'pWasteA')} value="${fmtIn(P.wasteArea, 1)}"></label>
-          <label class="field"><span>Verschnitt Leiste (%)</span><input inputmode="decimal" ${inputAttrs('ws', 'pWasteS')} value="${fmtIn(P.wasteSkirt, 1)}"></label>
-          <label class="field"><span>Leistenlänge (m)</span><input inputmode="decimal" ${inputAttrs('pc', 'pPiece')} value="${fmtIn(P.piece)}"></label>
-        </div>
-        <div data-k="waste" data-h style="margin-top:8px">
-          <table class="calc">
-            <tr class="total"><td>Bodenbelag inkl. ${fmt(P.wasteArea, 0)} %</td><td>${fmt(pc.netW)} m²</td></tr>
-            <tr class="total"><td>Sockelleiste inkl. ${fmt(P.wasteSkirt, 0)} %</td><td>${fmt(pc.skW)} lfm</td></tr>
-            ${P.piece > 0 ? `<tr><td>Leisten à ${fmt(P.piece)} m</td><td>${pc.pieces} Stück</td></tr>` : ''}
-          </table>
-        </div>
-      </div>
-      <button class="btn primary block" data-act="pdf">PDF erstellen</button>`;
-  }
-
-  function panelProject() {
-    const list = Object.values(db.projects).sort((a, b) => b.updated - a.updated).map((p) => {
-      const pc = calcProject(p);
-      return `<div class="item${p.id === P.id ? ' current' : ''}">
-        <div>${esc(p.name)}<div class="meta">${p.rooms.length} Räume · ${fmt(pc.net)} m² · ${new Date(p.updated).toLocaleDateString('de-DE')}</div></div>
-        <div class="row" style="flex-wrap:nowrap">
-          ${p.id === P.id ? '<span class="meta">geöffnet</span>' : `<button class="btn small" data-act="openProject" data-id="${p.id}">Öffnen</button>`}
-          <button class="icon-btn" title="Löschen" data-act="delProject" data-id="${p.id}">🗑</button>
-        </div>
-      </div>`;
-    }).join('');
-    return `
-      <div class="card">
-        <div class="card-head"><h3>Projektdaten</h3></div>
-        <label class="field"><span>Projektname</span><input ${inputAttrs('pn', 'pName')} value="${esc(P.name)}"></label>
-        <div class="grid2" style="margin-top:8px">
-          <label class="field"><span>Kunde / Auftraggeber</span><input ${inputAttrs('pcl', 'pClient')} value="${esc(P.client)}"></label>
-          <label class="field"><span>Datum</span><input type="date" ${inputAttrs('pd', 'pDate')} value="${esc(P.date)}"></label>
-          <label class="field"><span>Adresse / Baustelle</span><input ${inputAttrs('pa', 'pAddress')} value="${esc(P.address)}"></label>
-          <label class="field"><span>Aufgenommen von</span><input ${inputAttrs('pau', 'pAuthor')} value="${esc(P.author)}"></label>
-        </div>
-        <label class="field" style="margin-top:8px"><span>Notizen (erscheinen im PDF)</span><textarea ${inputAttrs('pno', 'pNote')}>${esc(P.note)}</textarea></label>
-      </div>
-      <div class="card">
-        <div class="card-head"><h3>Projekte</h3><button class="btn small primary" data-act="newProject">+ Neu</button></div>
-        <div class="proj-list" data-k="plist" data-h>${list}</div>
-      </div>
-      <div class="card">
-        <div class="card-head"><h3>Sichern</h3></div>
-        <p class="hint">Projekte werden automatisch auf diesem Gerät gespeichert. Als Datei kannst du sie sichern oder auf ein anderes Gerät übertragen.</p>
-        <div class="grid2">
-          <button class="btn" data-act="exportJson">Projekt exportieren</button>
-          <button class="btn" data-act="importJson">Projekt importieren</button>
-        </div>
-      </div>
-      <p class="hint" style="text-align:center">Raumaufmaß 1.0</p>`;
-  }
-
   function panelSig() {
     const r = room();
     const base = `${ui.tab}|${P.id}|${r ? r.id : '-'}`;
     switch (ui.tab) {
       case 'walls': return r ? `${base}|${r.points.length}|${G.isOrtho(r.points)}|${calcRoom(r).selfX}` : base;
-      case 'measure': return r ? `${base}|${r.points.length}|${r.meas.diags.map((d) => d.id).join(',')}` : base;
+      case 'measure': return r ? `${base}|${r.points.length}` : base;
       case 'doors': return r ? `${base}|${r.doors.map((d) => d.id + d.wall + d.swingOut).join(',')}|${r.points.length}` : base;
       case 'extra': return r ? `${base}|${r.extras.map((x) => x.id + x.kind).join(',')}` : base;
-      case 'result': return `${base}|${P.rooms.map((x) => x.id).join(',')}|${P.piece > 0}`;
-      case 'project': return `${base}|${Object.keys(db.projects).join(',')}`;
     }
     return base;
   }
 
   function renderPanel() {
     const r = room();
-    const html = { walls: panelWalls, measure: panelMeasure, doors: panelDoors, extra: panelExtras, result: panelResult, project: panelProject }[ui.tab](r);
+    const html = ({ walls: panelWalls, measure: panelMeasure, doors: panelDoors, extra: panelExtras }[ui.tab] || panelMeasure)(r);
     const sig = panelSig();
     $$('.panel-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === ui.tab));
     if (sig !== lastSig) {
@@ -1381,37 +1313,110 @@
     });
   }
 
-  function renderTabs() {
-    const tabs = P.rooms.map((r) => {
-      const c = calcRoom(r);
-      return `<button class="chip${r.id === P.activeRoom ? ' active' : ''}" data-act="selRoom" data-id="${r.id}">${esc(r.name)}<small>${fmt(c.net, 1)} m²</small></button>`;
+  function renderRoomHeader() {
+    const r = room();
+    $('#roomTitle').textContent = r ? r.name : '';
+  }
+
+  /** Kleine Grundriss-Zeichnung eines Raums (für Übersicht und Projektliste). */
+  function thumbSvg(r, w = 160, h = 112, pad = 10, labels = false) {
+    if (labels) pad = 18;
+    const p = r.points;
+    if (p.length < 3) return `<svg class="thumb" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="thumb-empty">noch nicht gezeichnet</text></svg>`;
+    const b = G.bounds(p);
+    const s = Math.min((w - 2 * pad) / Math.max(b.w, 0.1), (h - 2 * pad) / Math.max(b.h, 0.1));
+    const ox = (w - b.w * s) / 2, oy = (h - b.h * s) / 2;
+    const T = (q) => ({ x: ox + (q.x - b.minX) * s, y: h - oy - (q.y - b.minY) * s });
+    const pts = p.map(T).map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' ');
+    const c = calcRoom(r);
+    const doors = r.doors.map((d) => {
+      const g = doorGeom(r, d, c);
+      if (!g) return '';
+      const a = T(g.start), e = T(g.end);
+      return `<line class="thumb-door" x1="${a.x}" y1="${a.y}" x2="${e.x}" y2="${e.y}"/>`;
     }).join('');
-    // Gleiche Räume: Knöpfe behalten und nur Text/Status ändern, damit ein gerade laufender Tipp nicht verloren geht.
-    const sig = P.rooms.map((r) => r.id).join(',');
-    const bar = $('#roomTabs');
-    if (bar.dataset.sig === sig) {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = tabs;
-      [...tmp.children].forEach((el, i) => {
-        const cur = bar.children[i];
-        cur.className = el.className;
-        if (cur.innerHTML !== el.innerHTML) cur.innerHTML = el.innerHTML;
+    let dims = '';
+    if (labels) {
+      const so = G.orient(p);
+      c.walls.forEach((wl) => {
+        if (wl.len * s < 34) return;
+        const out = { x: wl.u.y * so, y: -wl.u.x * so };
+        const m = T({ x: (wl.a.x + wl.b.x) / 2, y: (wl.a.y + wl.b.y) / 2 });
+        const tx = m.x + out.x * 8, ty = m.y - out.y * 8;
+        const ang = -textAlong(wl.a, wl.b);
+        dims += `<text class="thumb-dim" x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${ang.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${fmt(wl.len)}</text>`;
       });
-    } else {
-      bar.innerHTML = tabs + `<button class="chip add" data-act="newRoom">+ Raum</button>`;
-      bar.dataset.sig = sig;
     }
-    $('#projTitle').textContent = P.name;
+    return `<svg class="thumb" viewBox="0 0 ${w} ${h}"><polygon class="thumb-floor" points="${pts}"/>${doors}${dims}</svg>`;
+  }
+
+  function roomBadge(r) {
+    const n = r.points.length;
+    if (n < 3) return '<span class="badge">Skizze fehlt</span>';
+    const done = Array.from({ length: n }, (_, j) => r.meas.walls[j] > 0).filter(Boolean).length;
+    if (done === n) return '<span class="badge ok">✓ gemessen</span>';
+    if (done > 0) return `<span class="badge warn">${done}/${n} gemessen</span>`;
+    if (r.meas.sketch || !r.meas.walls.length) return '<span class="badge">Maße eingegeben</span>';
+    return '<span class="badge">Skizze</span>';
+  }
+
+  function renderOverview() {
+    const pc = calcProject();
+    $('#ovTitle').textContent = P.name;
+    const dateStr = P.date ? new Date(P.date + 'T12:00:00').toLocaleDateString('de-DE') : '';
+    $('#ovSub').textContent = [P.client, P.address, dateStr].filter(Boolean).join(' · ');
+    const cards = pc.rooms.map(({ r, c }) => `
+      <button class="room-card" data-act="openRoom" data-id="${r.id}">
+        ${thumbSvg(r, 160, 112, 10, true)}
+        <div class="rc-body">
+          <div class="rc-name">${esc(r.name)}</div>
+          <div class="rc-stats"><span><b>${fmt(c.net)}</b> m²</span><span><b>${fmt(c.skirting)}</b> m Sockel</span></div>
+          ${roomBadge(r)}
+        </div>
+      </button>`).join('');
+    $('#overviewBody').innerHTML = `
+      ${pc.rooms.length ? '' : '<div class="empty-state"><div class="big-icon">📐</div><h2>Noch keine Räume</h2><p>Lege den ersten Raum an und miss ihn Wand für Wand.</p></div>'}
+      <div class="room-grid">
+        ${cards}
+        <button class="room-card add" data-act="newRoom"><span class="plus">＋</span><span>Raum hinzufügen</span></button>
+      </div>
+      ${pc.rooms.length ? `<div class="card material">
+        <div class="card-head"><h3>Materialbedarf</h3><button class="btn small ghost" data-act="editProject">Verschnitt ändern</button></div>
+        <table class="calc">
+          <tr><td>Bodenbelag inkl. ${fmt(P.wasteArea, 0)} % Verschnitt</td><td>${fmt(pc.netW)} m²</td></tr>
+          <tr><td>Sockelleiste inkl. ${fmt(P.wasteSkirt, 0)} % Verschnitt</td><td>${fmt(pc.skW)} m</td></tr>
+          ${P.piece > 0 ? `<tr><td>Leisten à ${fmt(P.piece)} m</td><td>${pc.pieces} Stück</td></tr>` : ''}
+        </table>
+      </div>` : ''}`;
+    $('#ovTotals').innerHTML = `
+      <div class="tot-main"><span>Gesamtfläche</span><b>${fmt(pc.net)} m²</b></div>
+      <div class="tot-side"><div><b>${fmt(pc.skirting)} m</b><span>Sockelleiste</span></div><div><b>${P.rooms.length}</b><span>Räume</span></div></div>`;
+  }
+
+  function renderProjects() {
+    const list = Object.values(db.projects).sort((x, y) => y.updated - x.updated);
+    $('#projectsBody').innerHTML = list.length ? list.map((p) => {
+      const pc = calcProject(p);
+      const shapes = p.rooms.slice(0, 4).map((r) => thumbSvg(r, 60, 44, 4)).join('');
+      return `<button class="project-card" data-act="openProject" data-id="${p.id}">
+        <div class="pc-thumbs">${shapes || '<span class="pc-empty">📐</span>'}</div>
+        <div class="pc-body">
+          <div class="pc-name">${esc(p.name)}</div>
+          <div class="pc-meta">${esc([p.client, p.address].filter(Boolean).join(' · ') || 'ohne Kunde')}</div>
+          <div class="pc-stats"><b>${fmt(pc.net)} m²</b> · ${p.rooms.length} ${p.rooms.length === 1 ? 'Raum' : 'Räume'} · ${new Date(p.updated).toLocaleDateString('de-DE')}</div>
+        </div>
+        <span class="chev">›</span>
+      </button>`;
+    }).join('') : '<div class="empty-state"><div class="big-icon">📁</div><h2>Noch keine Projekte</h2><p>Lege ein Projekt an, z. B. „Wohnung Müller“.</p></div>';
   }
 
   function renderSummary() {
     const r = room();
     const c = r ? calcRoom(r) : null;
-    const pc = calcProject();
     $('#summary').innerHTML = `
-      <div class="s"><b>${c ? fmt(c.net) : '–'} m²</b><span>Fläche Raum</span></div>
-      <div class="s"><b>${c ? fmt(c.skirting) : '–'} m</b><span>Sockelleiste Raum</span></div>
-      <div class="s"><b>${fmt(pc.net)} m²</b><span>Gesamt (${P.rooms.length} Räume)</span></div>`;
+      <div class="s"><b>${c ? fmt(c.net) : '–'} m²</b><span>Fläche</span></div>
+      <div class="s"><b>${c ? fmt(c.skirting) : '–'} m</b><span>Sockelleiste</span></div>
+      <div class="s"><b>${c ? fmt(c.perim) : '–'} m</b><span>Umfang</span></div>`;
   }
 
   function renderContext() {
@@ -1440,19 +1445,113 @@
     }
     if (bar.innerHTML !== h) bar.innerHTML = h;
     $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === ui.mode));
-    $('#btnSnap').textContent = ui.snap ? 'Fang an' : 'Fang aus';
+    $('#btnSnap').classList.toggle('on', ui.snap);
+    $('#btnDiag').classList.toggle('on', ui.showDiag);
   }
 
   function renderAll() {
-    if (!room() && P.rooms.length) P.activeRoom = P.rooms[0].id;
-    renderTabs();
+    $('#screenProjects').hidden = ui.screen !== 'projects';
+    $('#screenOverview').hidden = ui.screen !== 'overview';
+    $('#screenRoom').hidden = ui.screen !== 'room';
+    if (ui.screen === 'projects') { renderProjects(); return; }
+    if (ui.screen === 'overview') { renderOverview(); return; }
+    if (!room()) { ui.screen = 'overview'; renderAll(); return; }
+    renderRoomHeader();
     renderPlan();
     renderPanel();
     renderSummary();
     renderContext();
   }
 
-  // ---------------------------------------------------------------- Eingaben
+  // ---------------------------------------------------------------- Navigation
+  function go(screen) {
+    ui.screen = screen;
+    ui.mode = 'edit';
+    ui.draft = [];
+    ui.draftPreview = null;
+    ui.sel = null;
+    lastSig = '';
+    renderAll();
+    if (screen === 'room') {
+      W = 0; H = 0;
+      requestAnimationFrame(() => {
+        const rc = svg.getBoundingClientRect();
+        W = rc.width; H = rc.height;
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        fit();
+        renderPlan();
+      });
+    } else {
+      const body = screen === 'projects' ? $('#projectsBody') : $('#overviewBody');
+      if (body) body.scrollTop = 0;
+    }
+  }
+  function openRoom(id, tab) {
+    P.activeRoom = id;
+    ui.measIdx = 0;
+    const r = room();
+    ui.tab = tab || (r && (r.points.length < 3 || r.meas.walls.some((v) => v > 0) || r.meas.sketch) ? 'measure' : 'walls');
+    persist();
+    go('room');
+    if (ui.tab === 'measure' && r && r.points.length >= 3) { ui.sel = { type: 'wall', i: 0 }; renderAll(); }
+  }
+  /** Leere Räume (Skizze abgebrochen) beim Verlassen entfernen. */
+  function dropEmptyRoom() {
+    const r = room();
+    if (r && r.points.length < 3) {
+      P.rooms = P.rooms.filter((x) => x !== r);
+      P.activeRoom = P.rooms[0] ? P.rooms[0].id : null;
+      persist();
+    }
+  }
+
+  // ---------------------------------------------------------------- Projekt-Dialog
+  const dlgP = $('#dlgProject');
+  const formP = $('#formProject');
+  let projectDialogMode = 'new';
+  function openProjectDialog(mode) {
+    projectDialogMode = mode;
+    const f = formP.elements;
+    const src = mode === 'edit' ? P : newProject('');
+    f.name.value = src.name;
+    f.client.value = src.client || '';
+    f.address.value = src.address || '';
+    f.date.value = src.date || '';
+    f.author.value = src.author || '';
+    f.wasteArea.value = fmtIn(src.wasteArea, 1);
+    f.wasteSkirt.value = fmtIn(src.wasteSkirt, 1);
+    f.piece.value = fmtIn(src.piece);
+    f.note.value = src.note || '';
+    $('#projectMore').hidden = mode !== 'edit';
+    $('#dlgProjectTitle').textContent = mode === 'edit' ? 'Projektdaten' : 'Neues Projekt';
+    $('#btnProjectOk').textContent = mode === 'edit' ? 'Speichern' : 'Anlegen';
+    if (typeof dlgP.showModal === 'function') dlgP.showModal(); else dlgP.setAttribute('open', '');
+    if (mode === 'new') setTimeout(() => f.name.focus(), 50);
+  }
+  formP.addEventListener('submit', (e) => {
+    const sub = e.submitter && e.submitter.value;
+    if (sub !== 'ok') return;
+    const f = formP.elements;
+    const name = f.name.value.trim();
+    if (!name) { e.preventDefault(); f.name.focus(); toast('Bitte einen Projektnamen eingeben'); return; }
+    const numOr = (s, d) => { const v = num(s); return Number.isFinite(v) && v >= 0 ? v : d; };
+    if (projectDialogMode === 'new') {
+      const p = newProject(name);
+      Object.assign(p, { client: f.client.value.trim(), address: f.address.value.trim(), date: f.date.value || p.date, author: f.author.value.trim() });
+      db.projects[p.id] = p;
+      P = p;
+      persist();
+      go('overview');
+      setTimeout(openRoomDialog, 250);
+    } else {
+      mutate(() => Object.assign(P, {
+        name, client: f.client.value.trim(), address: f.address.value.trim(), date: f.date.value, author: f.author.value.trim(),
+        wasteArea: numOr(f.wasteArea.value, P.wasteArea), wasteSkirt: numOr(f.wasteSkirt.value, P.wasteSkirt), piece: numOr(f.piece.value, P.piece), note: f.note.value,
+      }));
+    }
+  });
+
+  // ---------------------------------------------------------------- Eingaben  // ---------------------------------------------------------------- Eingaben
   panel.addEventListener('change', (e) => {
     const el = e.target;
     const f = el.dataset.f;
@@ -1490,6 +1589,21 @@
       case 'diagA': case 'diagB': {
         const d = r.meas.diags.find((x) => x.id === el.dataset.id);
         mutate(() => { d[f === 'diagA' ? 'a' : 'b'] = +v; applyMeasure(r); });
+        break;
+      }
+      case 'diagPair': {
+        const da = +el.dataset.a, dbb = +el.dataset.b;
+        const raw = v.trim();
+        const n = raw === '' ? 0 : parseLaser(raw);
+        if (raw !== '' && !(n > 0.01 && n < 500)) { toast('Bitte eine gültige Länge eingeben'); return; }
+        let res;
+        mutate(() => {
+          const list = r.meas.diags.filter((d) => !(Math.min(d.a, d.b) === da && Math.max(d.a, d.b) === dbb));
+          if (n > 0) list.push({ id: uid(), a: da, b: dbb, len: r4(n) });
+          r.meas.diags = list;
+          res = applyMeasure(r);
+        });
+        reportMeasure(res);
         break;
       }
       case 'measOrtho': mutate(() => { r.meas.ortho = v; applyMeasure(r); }); break;
@@ -1603,6 +1717,20 @@
     },
     delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
+    openRoom: (el) => openRoom(el.dataset.id),
+    goOverview: () => { dropEmptyRoom(); go('overview'); },
+    goProjects: () => go('projects'),
+    editProject: () => openProjectDialog('edit'),
+    delCurrentProject: () => {
+      if (!confirm(`Projekt „${P.name}“ mit allen Räumen endgültig löschen?`)) return;
+      delete db.projects[P.id];
+      dlgP.close();
+      const rest = Object.values(db.projects).sort((x, y) => y.updated - x.updated);
+      P = rest[0] || newProject('Neues Projekt');
+      if (!rest.length) db.projects[P.id] = P;
+      persist();
+      go('projects');
+    },
     selRoom: (el) => { P.activeRoom = el.dataset.id; ui.sel = null; ui.measIdx = 0; ui.mode = ui.mode === 'draw' ? 'edit' : ui.mode; ui.draft = []; persist(); fit(); renderAll(); },
     delRoom: () => {
       const r = room();
@@ -1611,7 +1739,7 @@
         P.rooms = P.rooms.filter((x) => x.id !== r.id);
         P.activeRoom = P.rooms[0] ? P.rooms[0].id : null;
       });
-      fit(); renderAll();
+      go('overview');
     },
     selWall: (el, e) => {
       if (e.target.closest('input,button,select')) return;
@@ -1652,26 +1780,18 @@
     cancelDraw: () => {
       ui.mode = 'edit'; ui.draft = []; ui.draftPreview = null;
       const r = room();
-      if (r && r.points.length < 3) { P.rooms = P.rooms.filter((x) => x !== r); P.activeRoom = P.rooms[0] ? P.rooms[0].id : null; persist(); fit(); }
+      if (r && r.points.length < 3) { dropEmptyRoom(); go('overview'); return; }
       renderAll();
     },
     draftBack: () => { ui.draft.pop(); renderAll(); },
     pdf: () => exportPdf(),
-    newProject: () => {
-      const name = prompt('Name des neuen Projekts:', 'Neues Projekt');
-      if (name == null) return;
-      const p = newProject(name.trim() || 'Neues Projekt');
-      db.projects[p.id] = p; P = p; ui.sel = null; persist(); lastSig = ''; fit(); renderAll();
-      openRoomDialog();
-    },
-    openProject: (el) => { P = db.projects[el.dataset.id]; ui.sel = null; ui.mode = 'edit'; persist(); lastSig = ''; fit(); renderAll(); toast(`„${P.name}“ geöffnet`); },
-    delProject: (el) => {
-      const p = db.projects[el.dataset.id];
-      if (!p || !confirm(`Projekt „${p.name}“ endgültig löschen?`)) return;
-      delete db.projects[p.id];
-      if (!Object.keys(db.projects).length) { const n = newProject(); db.projects[n.id] = n; }
-      if (p.id === P.id) P = Object.values(db.projects).sort((a, b) => b.updated - a.updated)[0];
-      persist(); lastSig = ''; fit(); renderAll();
+    newProject: () => openProjectDialog('new'),
+    openProject: (el) => {
+      P = db.projects[el.dataset.id];
+      P.activeRoom = P.rooms[0] ? P.rooms[0].id : null;
+      undoStack.length = 0;
+      persist();
+      go('overview');
     },
     exportJson: () => {
       const blob = new Blob([JSON.stringify({ app: 'raumaufmass', version: 1, project: P }, null, 2)], { type: 'application/json' });
@@ -1713,11 +1833,12 @@
   $$('.seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   $('#btnFit').addEventListener('click', () => { fit(); renderPlan(); });
   $('#btnSnap').addEventListener('click', () => { ui.snap = !ui.snap; renderContext(); toast(ui.snap ? 'Fang an: 5-cm-Raster, Ausrichten, 15°-Winkel' : 'Fang aus: freie Position (1 cm)'); });
+  $('#btnDiag').addEventListener('click', () => { ui.showDiag = !ui.showDiag; renderContext(); renderPlan(); toast(ui.showDiag ? 'Alle Diagonalen werden angezeigt' : 'Nur gemessene Diagonalen'); });
   $('#btnUndo').addEventListener('click', undo);
-  $('#btnPdf').addEventListener('click', () => exportPdf());
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.target.matches('input,textarea')) { e.preventDefault(); undo(); }
     if (e.key === 'Escape' && ui.mode === 'draw') actions.cancelDraw();
+    else if (e.key === 'Escape' && ui.screen === 'room' && !document.querySelector('dialog[open]')) actions.goOverview();
   });
 
   $('#fileImport').addEventListener('change', async (e) => {
@@ -1730,7 +1851,7 @@
       if (!Array.isArray(p.rooms)) throw new Error();
       if (db.projects[p.id]) p.id = uid();
       p.updated = Date.now();
-      db.projects[p.id] = p; P = p; persist(); lastSig = ''; fit(); renderAll();
+      db.projects[p.id] = p; P = p; persist(); go('overview');
       toast(`„${p.name}“ importiert`);
     } catch (err) {
       toast('Die Datei ist kein gültiges Projekt');
@@ -1750,7 +1871,7 @@
   function updateShapeFields() {
     const s = form.elements.shape.value;
     $$('.shape-fields', form).forEach((el) => { el.hidden = el.dataset.shape !== s; });
-    $('#btnRoomOk').textContent = s === 'draw' ? 'Zeichnen starten' : 'Anlegen';
+    $('#btnRoomOk').textContent = s === 'draw' ? 'Skizze starten' : 'Anlegen';
   }
   form.addEventListener('change', (e) => { if (e.target.name === 'shape') updateShapeFields(); });
   form.addEventListener('submit', (e) => {
@@ -1773,13 +1894,11 @@
       return;
     }
     const r = newRoom(name, pts || []);
-    mutate(() => { P.rooms.push(r); P.activeRoom = r.id; });
-    ui.sel = null;
-    ui.tab = 'walls';
-    if (s === 'draw') { ui.mode = 'draw'; ui.draft = []; }
-    else ui.mode = 'edit';
-    fit();
-    renderAll();
+    snapshot();
+    P.rooms.push(r);
+    persist();
+    openRoom(r.id, s === 'draw' ? 'measure' : 'walls');
+    if (s === 'draw') { ui.mode = 'draw'; ui.draft = []; renderAll(); }
   });
 
   // ---------------------------------------------------------------- Dateien ausgeben (iOS-App, Web, Desktop)
@@ -1965,12 +2084,12 @@
         c.walls.map((w, i) => ({ cells: [`${letter(i)}–${letter((i + 1) % n)}`, `${fmt(w.len)} m`, `${fmt(c.angles[i], 1)}°`, r.meas.walls[i] > 0 ? `gemessen ${fmt(r.meas.walls[i], 3)} m` : (r.meas.walls.some((v) => v > 0) ? 'aus Skizze' : '')] })),
         { rowH: 5.6 },
       );
-      const dg = r.meas.diags.filter((d) => d.len > 0 && d.a < n && d.b < n);
+      const dg = allDiags(r);
       if (dg.length) {
         ensure(16);
-        setFont(12, 'bold'); doc.text('Diagonalen', M, y); y += 2;
-        table([{ label: 'Diagonale', w: 30 }, { label: 'gemessen', w: 40, align: 'right' }, { label: 'im Plan', w: 40, align: 'right' }],
-          dg.map((d) => ({ cells: [`${letter(d.a)}–${letter(d.b)}`, `${fmt(d.len, 3)} m`, `${fmt(G.len(r.points[d.a], r.points[d.b]), 3)} m`] })), { rowH: 5.6 });
+        setFont(12, 'bold'); doc.text('Diagonalen (Kontrollmaße)', M, y); y += 2;
+        table([{ label: 'Diagonale', w: 30 }, { label: 'laut Plan', w: 40, align: 'right' }, { label: 'gemessen', w: 40, align: 'right' }, { label: 'Differenz', w: 40, align: 'right' }],
+          dg.map((d) => ({ cells: [`${letter(d.a)}–${letter(d.b)}`, `${fmt(d.calc, 3)} m`, d.meas ? `${fmt(d.meas, 3)} m` : '–', d.meas ? (Math.abs(d.dev) <= 0.005 ? 'passt' : `${d.dev > 0 ? '+' : '-'}${fmt(Math.abs(d.dev) * 100, 1)} cm`) : ''] })), { rowH: 5.6 });
       }
       if (r.doors.length) {
         ensure(20);
@@ -2061,10 +2180,21 @@
       doc.text(`${fmt(d.width)}`, m.x, m.y + 0.5, { align: 'center', baseline: 'middle' });
     });
     // Diagonalen
-    doc.setDrawColor(120, 125, 135); doc.setLineWidth(0.2);
+    const dgs = allDiags(r).filter((d) => d.meas || p.length <= 5);
+    doc.setDrawColor(150, 155, 165); doc.setLineWidth(0.2);
     if (doc.setLineDashPattern) doc.setLineDashPattern([1.2, 1.2], 0);
-    r.meas.diags.filter((d) => d.len > 0 && d.a < p.length && d.b < p.length).forEach((d) => { const a = T(p[d.a]), bb = T(p[d.b]); doc.line(a.x, a.y, bb.x, bb.y); });
+    dgs.forEach((d) => { const a = T(p[d.a]), bb = T(p[d.b]); doc.line(a.x, a.y, bb.x, bb.y); });
     if (doc.setLineDashPattern) doc.setLineDashPattern([], 0);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(110, 115, 125);
+    dgs.forEach((d) => {
+      const a = T(p[d.a]), bb = T(p[d.b]);
+      const t = `${letter(d.a)}–${letter(d.b)} ${fmt(d.calc)}`;
+      const ang = textAlong(p[d.a], p[d.b]);
+      const tw = doc.getTextWidth(t);
+      const u = { x: Math.cos(rad(ang)), y: -Math.sin(rad(ang)) };
+      const mx = a.x + (bb.x - a.x) * 0.3, my = a.y + (bb.y - a.y) * 0.3;
+      doc.text(t, mx - u.x * (tw / 2) + Math.sin(rad(ang)) * -1, my - u.y * (tw / 2) + Math.cos(rad(ang)) * -1, { angle: ang });
+    });
     // Maße
     const so = G.orient(p);
     doc.setFont('helvetica', 'bold');
@@ -2103,7 +2233,6 @@
   if (!P.activeRoom && P.rooms[0]) P.activeRoom = P.rooms[0].id;
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(svg);
-  resize();
   renderAll();
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
@@ -2111,5 +2240,5 @@
   }
 
   // für Tests
-  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, get project() { return P; } };
+  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, allDiags, get project() { return P; }, get ui() { return ui; } };
 })();

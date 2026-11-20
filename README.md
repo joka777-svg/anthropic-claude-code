@@ -2,8 +2,20 @@
 
 App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenflächen und Sockelleisten. Das Ergebnis exportierst du als PDF.
 
+## Aufbau
+
+1. **Projekte**: Du legst ein Projekt mit Namen, Kunde und Adresse an.
+2. **Hauptfenster des Projekts**: Jeder Raum erscheint als kleine Zeichnung mit Wandmaßen, m² und laufenden Metern Sockelleiste. Ganz unten stehen Gesamtfläche, Sockelleiste gesamt und die Anzahl der Räume. Darunter folgt der Materialbedarf mit Verschnitt.
+3. **Raum**: Hier skizzierst und misst du. Mit „Fertig“ oder „‹ Übersicht“ geht es zurück zum Hauptfenster.
+
 ## Funktionen
 
+- **Diagonalen als Kontrollmaße**, z. B. für Spanndecken:
+  - Die App berechnet für jeden Raum alle Diagonalen von Ecke zu Ecke.
+  - Gemessene Diagonalen trägst du daneben ein. Die Zeichnung wird angeglichen.
+  - Für jede Diagonale zeigt die App „✓ passt“ oder die Abweichung in cm.
+  - Der Knopf ⤡ im Plan blendet alle Diagonalen ein.
+  - Im PDF erscheinen die Diagonalen im Plan und als Tabelle.
 - **Räume anlegen** als Rechteck, L-Form oder Trapez. Ein **schiefes Viereck** legst du aus 4 Wandlängen und einer Diagonale an, ohne Winkel zu messen. Du kannst einen Raum auch **frei zeichnen**, mit beliebig vielen Ecken.
 - **Schiefe Räume:**
   - Für jede Wand trägst du Länge und Innenwinkel ein.
