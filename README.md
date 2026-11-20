@@ -10,6 +10,23 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
 
 ## Funktionen
 
+- **Türen & Fenster** (im Hauptfenster über „Räume | Türen & Fenster“):
+  - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Die Rohbauöffnung misst du an je 3 Stellen, dazu die Diagonalen. Das kleinste Maß zählt, und die App warnt, wenn die Öffnung schief oder nicht parallel ist.
+  - **Türen:**
+    - Wandstärke links und rechts, Anschlag DIN links oder rechts, Aufschlag, Türart, Zarge, Schloss.
+    - Die Höhe misst du ab Fertigfußboden, ab Rohfußboden (abzüglich Aufbau) oder ab Meterriss.
+    - Die App zeigt automatisch das **Normmaß** nach DIN 18101 (Rohbaurichtmaß und Türblatt) oder meldet ein Sondermaß.
+  - **Fenster:**
+    - 1 bis 3 Flügel mit Öffnungsart (Dreh-Kipp, Dreh, Kipp, Fest, Schiebe), Oberlicht, Balkontür.
+    - Dazu Material, Verglasung, Farben, Rollladen, Brüstung und Einbausituation.
+    - Das **Bestellmaß** ist die Öffnung abzüglich der Fugen.
+  - **Fensterbänke innen und außen:** Länge und Tiefe werden aus Laibungstiefe, Überstand, seitlicher Einbindung und Einschub berechnet. Dazu kommt die Laibungsfläche innen.
+  - **Fotos** je Position (Kamera oder Mediathek). Sie werden auf dem Gerät gespeichert.
+  - Für jede Position zeichnet die App eine **Ansicht** mit Öffnungssymbolen. Die Spitze des Symbols zeigt zur Bandseite.
+  - Im **PDF** erscheinen Tabellen für Türen, Fenster und Fensterbänke. Dazu kommt je Position ein Detailblock mit Zeichnung, allen Werten und Fotos.
+  - Zahlen ohne Einheit liest die App so:
+    - Breite und Höhe: 885 als mm, 88,5 als cm, 0,885 als m vom Laser.
+    - Kleine Maße wie Wandstärke, Fugen oder Laibung: immer als mm.
 - **Diagonalen als Kontrollmaße**, z. B. für Spanndecken:
   - Die App berechnet für jeden Raum alle Diagonalen von Ecke zu Ecke.
   - Gemessene Diagonalen trägst du daneben ein. Die Zeichnung wird angeglichen.

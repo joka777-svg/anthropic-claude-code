@@ -64,6 +64,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Zum Fotografieren von Türen und Fenstern für das Aufmaß.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Zum Hinzufügen von Fotos zu Türen und Fenstern im Aufmaß.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Zum Speichern von Fotos aus dem Aufmaß.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIFileSharingEnabled</key>

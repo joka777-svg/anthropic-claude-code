@@ -398,6 +398,7 @@
       extras: (r.extras || []).map((x) => Object.assign({ id: uid(), name: 'Abzug', kind: 'sub', w: 0, d: 0, count: 1, skirt: false }, x)),
       meas: Object.assign(newMeas(), r.meas || {}),
     }));
+    p.openings = Array.isArray(p.openings) ? p.openings : [];
     return p;
   }
   function loadDb() {
@@ -428,6 +429,8 @@
   const ui = {
     tab: 'measure',
     screen: 'projects',
+    ovTab: 'rooms',
+    openingId: null,
     showDiag: false,
     measIdx: 0,
     mode: 'edit',
@@ -1386,7 +1389,17 @@
           ${roomBadge(r)}
         </div>
       </div>`).join('');
-    $('#overviewBody').innerHTML = `
+    const nOps = (P.openings || []).length;
+    const tabs = OP ? `<div class="seg2 ov-tabs" role="tablist">
+        <button class="${ui.ovTab === 'rooms' ? 'active' : ''}" data-act="ovTab" data-tab="rooms">Räume <small>${P.rooms.length}</small></button>
+        <button class="${ui.ovTab === 'openings' ? 'active' : ''}" data-act="ovTab" data-tab="openings">Türen &amp; Fenster <small>${nOps}</small></button>
+      </div>` : '';
+    if (OP && ui.ovTab === 'openings') {
+      $('#overviewBody').innerHTML = tabs + OP.renderList();
+      $('#ovTotals').innerHTML = OP.totalsHtml();
+      return;
+    }
+    $('#overviewBody').innerHTML = tabs + `
       ${pc.rooms.length ? '' : '<div class="empty-state"><div class="big-icon">📐</div><h2>Noch keine Räume</h2><p>Lege den ersten Raum an und miss ihn Wand für Wand.</p></div>'}
       <div class="room-grid">
         ${cards}
@@ -1466,6 +1479,8 @@
     $('#screenProjects').hidden = ui.screen !== 'projects';
     $('#screenOverview').hidden = ui.screen !== 'overview';
     $('#screenRoom').hidden = ui.screen !== 'room';
+    $('#screenOpening').hidden = ui.screen !== 'opening';
+    if (ui.screen === 'opening' && OP) { OP.renderEditor(); return; }
     if (ui.screen === 'projects') { renderProjects(); return; }
     if (ui.screen === 'overview') { renderOverview(); return; }
     if (!room()) { ui.screen = 'overview'; renderAll(); return; }
@@ -1484,6 +1499,7 @@
     ui.draftPreview = null;
     ui.sel = null;
     lastSig = '';
+    if (screen === 'opening') $('#openingBody').scrollTop = 0;
     renderAll();
     if (screen === 'room') {
       W = 0; H = 0;
@@ -1731,6 +1747,7 @@
     delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
     openRoom: (el) => openRoom(el.dataset.id),
+    ovTab: (el) => { ui.ovTab = el.dataset.tab; renderAll(); },
     delRoomCard: (el) => {
       const idx = P.rooms.findIndex((x) => x.id === el.dataset.id);
       if (idx < 0) return;
@@ -1836,10 +1853,13 @@
       P.activeRoom = P.rooms[0] ? P.rooms[0].id : null;
       undoStack.length = 0;
       persist();
+      if (OP) OP.preload(P).catch(() => {});
       go('overview');
     },
     exportJson: () => {
-      const blob = new Blob([JSON.stringify({ app: 'raumaufmass', version: 1, project: P }, null, 2)], { type: 'application/json' });
+      const photos = {};
+      (P.openings || []).forEach((o) => (o.photos || []).forEach((id) => { const d = OP && OP.photoCache.get(id); if (d) photos[id] = d; }));
+      const blob = new Blob([JSON.stringify({ app: 'raumaufmass', version: 2, project: P, photos }, null, 2)], { type: 'application/json' });
       deliverFile(blob, `${fileBase()}.json`, 'application/json');
     },
     importJson: () => $('#fileImport').click(),
@@ -1886,7 +1906,7 @@
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.target.matches('input,textarea')) { e.preventDefault(); undo(); }
     if (e.key === 'Escape' && ui.mode === 'draw') actions.cancelDraw();
-    else if (e.key === 'Escape' && ui.screen === 'room' && !document.querySelector('dialog[open]')) actions.goOverview();
+    else if (e.key === 'Escape' && (ui.screen === 'room' || ui.screen === 'opening') && !document.querySelector('dialog[open], .photo-viewer')) actions.goOverview();
   });
 
   $('#fileImport').addEventListener('change', async (e) => {
@@ -1899,6 +1919,7 @@
       if (!Array.isArray(p.rooms)) throw new Error();
       if (db.projects[p.id]) p.id = uid();
       p.updated = Date.now();
+      if (OP && d.photos) await OP.importPhotos(d.photos);
       db.projects[p.id] = p; P = p; persist(); go('overview');
       toast(`„${p.name}“ importiert`);
     } catch (err) {
@@ -2101,6 +2122,12 @@
       doc.text(`${pc.pieces} Stück`, PW - M - 5, y + 29, { align: 'right' });
     }
     y += boxH + 8;
+    const opLine = OP ? OP.pdfSummaryLine() : '';
+    if (opLine) {
+      ensure(14);
+      setFont(11, 'bold'); doc.text('Türen & Fenster', M, y); y += 6;
+      setFont(10, 'normal'); doc.text(opLine, M, y); y += 9;
+    }
 
     if (P.note && P.note.trim()) {
       ensure(20);
@@ -2171,6 +2198,19 @@
       calcRows.push({ bold: true, cells: ['Sockelleiste', `${fmt(c.skirting)} m`] });
       table([{ label: 'Position', w: 120 }, { label: 'Wert', w: 58, align: 'right' }], calcRows, { rowH: 5.8 });
     });
+
+    // ---- Türen & Fenster
+    if (OP) {
+      const ctx = {
+        doc, M, PW, PH, table, ensure, getY: () => y, setY: (v) => { y = v; },
+        header: (title) => {
+          doc.setFillColor(...accent); doc.rect(0, 0, PW, 4, 'F');
+          y = 18; setFont(16, 'bold'); doc.text(title, M, y); y += 8;
+        },
+        heading: (t) => { ensure(18); setFont(12, 'bold'); doc.text(t, M, y); y += 2; },
+      };
+      OP.pdfPages(ctx);
+    }
 
     // ---- Fußzeilen
     const pages = doc.getNumberOfPages();
@@ -2279,6 +2319,14 @@
 
   // ---------------------------------------------------------------- Start
   if (!P.activeRoom && P.rooms[0]) P.activeRoom = P.rooms[0].id;
+  // Türen & Fenster (eigenes Modul)
+  const RA = {
+    $, esc, uid, toast, ui,
+    get P() { return P; },
+    persist, snapshot, renderAll, go,
+  };
+  const OP = window.OpeningsModule ? window.OpeningsModule(RA) : null;
+  if (OP) { OP.preload(P).catch(() => {}); setTimeout(() => OP.gc(db), 3000); }
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(svg);
   renderAll();
@@ -2288,5 +2336,5 @@
   }
 
   // für Tests
-  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, allDiags, get project() { return P; }, get ui() { return ui; } };
+  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, allDiags, OP, get project() { return P; }, get ui() { return ui; } };
 })();
