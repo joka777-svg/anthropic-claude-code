@@ -1,0 +1,53 @@
+name: iOS-App bauen
+
+on:
+  push:
+    branches: ['claude/**', 'main']
+    paths: ['www/**', 'ios/**', 'package.json', 'package-lock.json', 'capacitor.config.json', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Web-App ins iOS-Projekt kopieren
+        run: npx cap sync ios
+
+      - name: Neueste Xcode-Version wählen
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          echo "Verwende $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: App bauen (unsigniert)
+        working-directory: ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 60
+          test -d build/Build/Products/Release-iphoneos/App.app
+
+      - name: IPA-Datei packen
+        run: |
+          mkdir -p dist/Payload
+          cp -R ios/App/build/Build/Products/Release-iphoneos/App.app dist/Payload/
+          cd dist && zip -qry Raumaufmass-unsigned.ipa Payload && ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raumaufmass-iOS-ipa
+          path: dist/Raumaufmass-unsigned.ipa
+          retention-days: 90

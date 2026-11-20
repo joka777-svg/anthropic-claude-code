@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Raumaufmaß">
+  <meta name="theme-color" content="#1d4ed8">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <title>Raumaufmaß</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" class="brand-icon">
+      <div class="brand-text">
+        <span class="brand-name">Raumaufmaß</span>
+        <span class="brand-project" id="projTitle"></span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="btnUndo" class="btn ghost" title="Rückgängig" aria-label="Rückgängig">↶</button>
+      <button id="btnPdf" class="btn primary">PDF</button>
+    </div>
+  </header>
+
+  <nav id="roomTabs" class="room-tabs" aria-label="Räume"></nav>
+
+  <main class="workspace">
+    <section class="plan-wrap">
+      <svg id="plan" aria-label="Grundriss"></svg>
+      <div class="plan-toolbar">
+        <div class="seg" role="tablist" aria-label="Werkzeug">
+          <button data-mode="edit" class="active">Bearbeiten</button>
+          <button data-mode="draw">Zeichnen</button>
+          <button data-mode="door">Tür</button>
+        </div>
+        <button id="btnFit" class="btn small" title="Grundriss einpassen">⤢</button>
+        <button id="btnSnap" class="btn small" title="Raster / Fang">Fang an</button>
+      </div>
+      <div id="contextBar" class="context-bar"></div>
+      <div id="hud" class="hud" hidden></div>
+      <div id="emptyHint" class="empty-hint" hidden>
+        <p>Noch kein Raum vorhanden.</p>
+        <button class="btn primary" data-act="newRoom">+ Raum anlegen</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-tabs" role="tablist">
+        <button data-tab="walls" class="active">Wände</button>
+        <button data-tab="doors">Türen</button>
+        <button data-tab="extra">Abzüge</button>
+        <button data-tab="result">Ergebnis</button>
+        <button data-tab="project">Projekt</button>
+      </div>
+      <div id="panelBody" class="panel-body"></div>
+    </section>
+  </main>
+
+  <footer id="summary" class="summary"></footer>
+
+  <dialog id="dlgRoom" class="dialog">
+    <form method="dialog" id="formRoom">
+      <h2>Neuer Raum</h2>
+      <label class="field"><span>Raumname</span><input name="name" value="Raum" autocomplete="off"></label>
+      <div class="shape-picker">
+        <label><input type="radio" name="shape" value="rect" checked><span>▭ Rechteck</span></label>
+        <label><input type="radio" name="shape" value="quad"><span>⏢ Schiefes Viereck</span></label>
+        <label><input type="radio" name="shape" value="trap"><span>⏥ Trapez</span></label>
+        <label><input type="radio" name="shape" value="L"><span>⌐ L-Form</span></label>
+        <label><input type="radio" name="shape" value="draw"><span>✎ Frei zeichnen</span></label>
+      </div>
+      <div class="shape-fields" data-shape="rect">
+        <label class="field"><span>Länge (m)</span><input name="rect_a" inputmode="decimal" value="5,00"></label>
+        <label class="field"><span>Breite (m)</span><input name="rect_b" inputmode="decimal" value="4,00"></label>
+      </div>
+      <div class="shape-fields" data-shape="quad" hidden>
+        <p class="hint">Für schiefe Räume: alle 4 Wände messen und eine Diagonale von Ecke A nach Ecke C. Winkel müssen nicht gemessen werden.</p>
+        <svg viewBox="0 0 220 120" class="quad-sketch" aria-hidden="true">
+          <polygon points="20,100 200,100 170,20 40,30" fill="none" stroke="currentColor" stroke-width="2"/>
+          <line x1="20" y1="100" x2="170" y2="20" stroke="currentColor" stroke-dasharray="4 4"/>
+          <text x="8" y="114">A</text><text x="204" y="114">B</text><text x="174" y="16">C</text><text x="30" y="24">D</text>
+          <text x="105" y="114">a</text><text x="192" y="60">b</text><text x="100" y="20">c</text><text x="18" y="65">d</text><text x="100" y="70">e</text>
+        </svg>
+        <div class="grid2">
+          <label class="field"><span>a: A–B (m)</span><input name="q_a" inputmode="decimal" value="5,00"></label>
+          <label class="field"><span>b: B–C (m)</span><input name="q_b" inputmode="decimal" value="4,10"></label>
+          <label class="field"><span>c: C–D (m)</span><input name="q_c" inputmode="decimal" value="4,60"></label>
+          <label class="field"><span>d: D–A (m)</span><input name="q_d" inputmode="decimal" value="3,90"></label>
+          <label class="field"><span>e: Diagonale A–C (m)</span><input name="q_e" inputmode="decimal" value="6,30"></label>
+        </div>
+      </div>
+      <div class="shape-fields" data-shape="trap" hidden>
+        <div class="grid2">
+          <label class="field"><span>Unten (m)</span><input name="t_a" inputmode="decimal" value="5,00"></label>
+          <label class="field"><span>Oben (m)</span><input name="t_b" inputmode="decimal" value="3,50"></label>
+          <label class="field"><span>Tiefe (m)</span><input name="t_h" inputmode="decimal" value="4,00"></label>
+          <label class="field"><span>Versatz links (m)</span><input name="t_o" inputmode="decimal" value="0,50"></label>
+        </div>
+      </div>
+      <div class="shape-fields" data-shape="L" hidden>
+        <div class="grid2">
+          <label class="field"><span>Gesamtlänge (m)</span><input name="l_a" inputmode="decimal" value="6,00"></label>
+          <label class="field"><span>Gesamtbreite (m)</span><input name="l_b" inputmode="decimal" value="5,00"></label>
+          <label class="field"><span>Ausschnitt Länge (m)</span><input name="l_c" inputmode="decimal" value="2,50"></label>
+          <label class="field"><span>Ausschnitt Breite (m)</span><input name="l_d" inputmode="decimal" value="2,00"></label>
+        </div>
+      </div>
+      <div class="shape-fields" data-shape="draw" hidden>
+        <p class="hint">Tippe im Grundriss nacheinander auf die Ecken. Tippe zum Schließen auf die erste Ecke. Danach kannst du die Wandlängen genau eintragen.</p>
+      </div>
+      <p class="form-error" id="roomError"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn ghost" formnovalidate>Abbrechen</button>
+        <button value="ok" class="btn primary" id="btnRoomOk">Anlegen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="fileImport" accept="application/json,.json" hidden>
+
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

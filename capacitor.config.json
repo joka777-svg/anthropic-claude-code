@@ -1,0 +1,9 @@
+{
+  "appId": "de.raumaufmass.app",
+  "appName": "Raumaufmaß",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#f4f5f7"
+  }
+}

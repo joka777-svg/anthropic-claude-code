@@ -1,0 +1,22 @@
+{
+  "name": "raumaufmass",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Raumaufmaß – Grundrisse zeichnen, Bodenfläche und Sockelleisten berechnen, PDF exportieren (iOS-App / Web-App)",
+  "scripts": {
+    "vendor": "node scripts/copy-vendor.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "ios:add": "cap add ios",
+    "ios:sync": "cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.6.2",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.6.2",
+    "@capacitor/share": "8.0.3",
+    "jspdf": "4.2.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}
