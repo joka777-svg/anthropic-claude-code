@@ -37,12 +37,22 @@
   const roundPt = (p) => ({ x: r4(p.x), y: r4(p.y) });
 
   let toastTimer = null;
-  function toast(msg) {
+  let toastAction = null;
+  function toast(msg, actionLabel, action) {
     const t = $('#toast');
     t.textContent = msg;
+    toastAction = action || null;
+    t.classList.toggle('has-action', !!action);
+    if (action) {
+      const b = document.createElement('button');
+      b.className = 'toast-action';
+      b.textContent = actionLabel;
+      b.addEventListener('click', () => { const fn = toastAction; toastAction = null; t.classList.remove('show'); if (fn) fn(); });
+      t.appendChild(b);
+    }
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => { t.classList.remove('show'); toastAction = null; }, action ? 6000 : 2600);
   }
 
   // ---------------------------------------------------------------- Geometrie
@@ -395,18 +405,19 @@
       const s = localStorage.getItem(STORE);
       if (s) {
         const d = JSON.parse(s);
-        if (d && d.projects && Object.keys(d.projects).length) {
+        if (d && d.projects && (Object.keys(d.projects).length || d.seeded)) {
           Object.values(d.projects).forEach(normalizeProject);
           return d;
         }
       }
     } catch (e) { /* leer oder defekt -> neu */ }
     const p = demoProject();
-    return { projects: { [p.id]: p }, current: p.id };
+    return { projects: { [p.id]: p }, current: p.id, seeded: true };
   }
 
   let db = loadDb();
-  let P = db.projects[db.current] || Object.values(db.projects)[0];
+  db.seeded = true;
+  let P = db.projects[db.current] || Object.values(db.projects)[0] || newProject('Neues Projekt');
 
   function persist() {
     P.updated = Date.now();
@@ -1366,14 +1377,15 @@
     const dateStr = P.date ? new Date(P.date + 'T12:00:00').toLocaleDateString('de-DE') : '';
     $('#ovSub').textContent = [P.client, P.address, dateStr].filter(Boolean).join(' · ');
     const cards = pc.rooms.map(({ r, c }) => `
-      <button class="room-card" data-act="openRoom" data-id="${r.id}">
+      <div class="room-card" role="button" tabindex="0" data-act="openRoom" data-id="${r.id}">
+        <button class="card-del" data-act="delRoomCard" data-id="${r.id}" aria-label="Raum ${esc(r.name)} löschen" title="Raum löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         ${thumbSvg(r, 160, 112, 10, true)}
         <div class="rc-body">
           <div class="rc-name">${esc(r.name)}</div>
           <div class="rc-stats"><span><b>${fmt(c.net)}</b> m²</span><span><b>${fmt(c.skirting)}</b> m Sockel</span></div>
           ${roomBadge(r)}
         </div>
-      </button>`).join('');
+      </div>`).join('');
     $('#overviewBody').innerHTML = `
       ${pc.rooms.length ? '' : '<div class="empty-state"><div class="big-icon">📐</div><h2>Noch keine Räume</h2><p>Lege den ersten Raum an und miss ihn Wand für Wand.</p></div>'}
       <div class="room-grid">
@@ -1398,15 +1410,16 @@
     $('#projectsBody').innerHTML = list.length ? list.map((p) => {
       const pc = calcProject(p);
       const shapes = p.rooms.slice(0, 4).map((r) => thumbSvg(r, 60, 44, 4)).join('');
-      return `<button class="project-card" data-act="openProject" data-id="${p.id}">
+      return `<div class="project-card" role="button" tabindex="0" data-act="openProject" data-id="${p.id}">
         <div class="pc-thumbs">${shapes || '<span class="pc-empty">📐</span>'}</div>
         <div class="pc-body">
           <div class="pc-name">${esc(p.name)}</div>
           <div class="pc-meta">${esc([p.client, p.address].filter(Boolean).join(' · ') || 'ohne Kunde')}</div>
           <div class="pc-stats"><b>${fmt(pc.net)} m²</b> · ${p.rooms.length} ${p.rooms.length === 1 ? 'Raum' : 'Räume'} · ${new Date(p.updated).toLocaleDateString('de-DE')}</div>
         </div>
+        <button class="card-del inline" data-act="delProjectCard" data-id="${p.id}" aria-label="Projekt ${esc(p.name)} löschen" title="Projekt löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="chev">›</span>
-      </button>`;
+      </div>`;
     }).join('') : '<div class="empty-state"><div class="big-icon">📁</div><h2>Noch keine Projekte</h2><p>Lege ein Projekt an, z. B. „Wohnung Müller“.</p></div>';
   }
 
@@ -1718,6 +1731,38 @@
     delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
     openRoom: (el) => openRoom(el.dataset.id),
+    delRoomCard: (el) => {
+      const idx = P.rooms.findIndex((x) => x.id === el.dataset.id);
+      if (idx < 0) return;
+      const proj = P;
+      const [removed] = proj.rooms.splice(idx, 1);
+      if (proj.activeRoom === removed.id) proj.activeRoom = proj.rooms[0] ? proj.rooms[0].id : null;
+      persist();
+      renderAll();
+      toast(`„${removed.name}“ gelöscht`, 'Rückgängig', () => {
+        proj.rooms.splice(Math.min(idx, proj.rooms.length), 0, removed);
+        persist();
+        renderAll();
+      });
+    },
+    delProjectCard: (el) => {
+      const p = db.projects[el.dataset.id];
+      if (!p) return;
+      delete db.projects[p.id];
+      const wasCurrent = p.id === P.id;
+      if (wasCurrent) {
+        const rest = Object.values(db.projects).sort((x, y) => y.updated - x.updated);
+        P = rest[0] || newProject('Neues Projekt');
+      }
+      persist();
+      renderAll();
+      toast(`Projekt „${p.name}“ gelöscht`, 'Rückgängig', () => {
+        db.projects[p.id] = p;
+        if (wasCurrent) P = p;
+        persist();
+        renderAll();
+      });
+    },
     goOverview: () => { dropEmptyRoom(); go('overview'); },
     goProjects: () => go('projects'),
     editProject: () => openProjectDialog('edit'),
@@ -1818,6 +1863,9 @@
     scrollPanelTo(`[data-k="door-${id}"]`);
   }
 
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.room-card[data-act], .project-card[data-act]')) { e.preventDefault(); e.target.click(); }
+  });
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;

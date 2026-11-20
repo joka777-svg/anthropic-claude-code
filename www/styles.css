@@ -383,6 +383,22 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
   opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100vw - 32px); z-index: 50; box-shadow: var(--shadow-lg);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.has-action { display: flex; align-items: center; gap: 14px; pointer-events: auto; padding: 8px 8px 8px 16px; }
+.toast-action { border: 0; background: rgba(255,255,255,.16); color: #9db4ff; font-weight: 700; padding: 8px 12px; border-radius: 10px; white-space: nowrap; }
+
+/* Löschen-Knöpfe auf Karten */
+.room-card { position: relative; cursor: pointer; }
+.project-card { cursor: pointer; }
+.card-del {
+  position: absolute; top: 8px; right: 8px; width: 34px; height: 34px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 1;
+}
+.card-del svg { width: 18px; height: 18px; }
+.card-del:active { color: #fff; background: var(--danger); }
+.card-del.inline { position: static; flex: none; box-shadow: none; background: var(--surface-2); }
+@media (hover: hover) { .card-del:hover { color: var(--danger); } }
 
 /* iPad / Querformat: Plan links, Panel rechts */
 @media (min-width: 820px), (orientation: landscape) and (min-width: 640px) {
@@ -392,3 +408,5 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
   .screen-body, .nav-large { padding-left: max(16px, calc((100vw - 980px) / 2)); padding-right: max(16px, calc((100vw - 980px) / 2)); }
   .totals { margin-left: max(12px, calc((100vw - 980px) / 2)); margin-right: max(12px, calc((100vw - 980px) / 2)); }
 }
+
+.card-head .btn.ghost { color: var(--accent); }
