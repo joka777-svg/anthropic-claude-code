@@ -1400,11 +1400,12 @@
       return;
     }
     $('#overviewBody').innerHTML = tabs + `
-      ${pc.rooms.length ? '' : '<div class="empty-state"><div class="big-icon">📐</div><h2>Noch keine Räume</h2><p>Lege den ersten Raum an und miss ihn Wand für Wand.</p></div>'}
-      <div class="room-grid">
+      ${pc.rooms.length ? '' : `<div class="empty-state"><div class="big-icon">📐</div><h2>Was möchtest du aufmessen?</h2><p>Räume für Bodenfläche und Sockelleisten – oder nur Türen und Fenster.</p></div>
+        ${OP && !nOps ? '<div class="op-add three"><button class="btn primary big" data-act="newRoom">＋ Raum</button><button class="btn big" data-oact="add" data-type="door">＋ Tür</button><button class="btn big" data-oact="add" data-type="window">＋ Fenster</button></div>' : ''}`}
+      ${!pc.rooms.length && OP && !nOps ? '' : `<div class="room-grid">
         ${cards}
         <button class="room-card add" data-act="newRoom"><span class="plus">＋</span><span>Raum hinzufügen</span></button>
-      </div>
+      </div>`}
       ${pc.rooms.length ? `<div class="card material">
         <div class="card-head"><h3>Materialbedarf</h3><button class="btn small ghost" data-act="editProject">Verschnitt ändern</button></div>
         <table class="calc">
@@ -1570,8 +1571,8 @@
       db.projects[p.id] = p;
       P = p;
       persist();
+      ui.ovTab = 'rooms';
       go('overview');
-      setTimeout(openRoomDialog, 250);
     } else {
       mutate(() => Object.assign(P, {
         name, client: f.client.value.trim(), address: f.address.value.trim(), date: f.date.value, author: f.author.value.trim(),
@@ -1852,6 +1853,7 @@
       P = db.projects[el.dataset.id];
       P.activeRoom = P.rooms[0] ? P.rooms[0].id : null;
       undoStack.length = 0;
+      ui.ovTab = !P.rooms.length && (P.openings || []).length ? 'openings' : 'rooms';
       persist();
       if (OP) OP.preload(P).catch(() => {});
       go('overview');
@@ -2010,7 +2012,7 @@
   // ---------------------------------------------------------------- PDF
   function exportPdf() {
     if (!window.jspdf) { toast('PDF-Modul nicht geladen'); return; }
-    if (!P.rooms.some((r) => r.points.length >= 3)) { toast('Noch kein Raum gezeichnet'); return; }
+    if (!P.rooms.some((r) => r.points.length >= 3) && !(P.openings || []).length) { toast('Noch nichts aufgemessen – erst einen Raum, eine Tür oder ein Fenster anlegen'); return; }
     try {
       const doc = buildPdf();
       deliverFile(doc.output('blob'), `${fileBase()}.pdf`, 'application/pdf');
@@ -2071,13 +2073,15 @@
     }
 
     // ---- Seite 1: Übersicht
+    const hasRooms = pc.rooms.some((x) => x.r.points.length >= 3);
+    const hasOps = !!(OP && (P.openings || []).length);
     doc.setFillColor(...accent);
     doc.rect(0, 0, PW, 4, 'F');
     y = 20;
     setFont(22, 'bold');
     doc.text('Aufmaß', M, y);
     setFont(11, 'normal', grey);
-    doc.text('Bodenfläche und Sockelleisten', M, y + 7);
+    doc.text(hasRooms && hasOps ? 'Bodenfläche, Sockelleisten, Türen und Fenster' : hasRooms ? 'Bodenfläche und Sockelleisten' : 'Türen und Fenster', M, y + 7);
     setFont(10, 'normal', grey);
     doc.text(dateStr, PW - M, y, { align: 'right' });
     y += 18;
@@ -2092,6 +2096,7 @@
     });
     y += 6;
 
+    if (hasRooms) {
     setFont(13, 'bold');
     doc.text('Zusammenfassung', M, y);
     y += 4;
@@ -2122,7 +2127,8 @@
       doc.text(`${pc.pieces} Stück`, PW - M - 5, y + 29, { align: 'right' });
     }
     y += boxH + 8;
-    const opLine = OP ? OP.pdfSummaryLine() : '';
+    }
+    const opLine = OP && hasRooms ? OP.pdfSummaryLine() : '';
     if (opLine) {
       ensure(14);
       setFont(11, 'bold'); doc.text('Türen & Fenster', M, y); y += 6;
@@ -2209,6 +2215,7 @@
         },
         heading: (t) => { ensure(18); setFont(12, 'bold'); doc.text(t, M, y); y += 2; },
       };
+      ctx.samePage = !hasRooms; // nur Türen/Fenster: direkt auf Seite 1 weiter
       OP.pdfPages(ctx);
     }
 

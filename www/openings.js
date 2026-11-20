@@ -55,7 +55,7 @@ window.OpeningsModule = function (RA) {
 
   function defaults(type) {
     const base = {
-      id: uid(), type, pos: '', roomId: '', location: '', qty: 1,
+      id: uid(), type, pos: '', roomId: '', roomText: '', location: '', qty: 1,
       w: [null, null, null], h: [null, null, null], diag: [null, null], wall: [null, null],
       outer: { w: null, h: null },
       note: '', photos: [],
@@ -165,7 +165,13 @@ window.OpeningsModule = function (RA) {
     return pre + n;
   }
   const typeName = (o) => (o.type === 'door' ? 'Tür' : o.balcony ? 'Balkontür' : 'Fenster');
-  const roomName = (o) => { const r = RA.P.rooms.find((x) => x.id === o.roomId); return r ? r.name : (o.location || ''); };
+  const roomName = (o) => { const r = o.roomId && RA.P.rooms.find((x) => x.id === o.roomId); return r ? r.name : (o.roomText || ''); };
+  /** Vorschläge: gezeichnete Räume und bereits eingetragene Raumnamen */
+  function roomSuggestions() {
+    const s = new Set(RA.P.rooms.map((r) => r.name));
+    (RA.P.openings || []).forEach((o) => { if (o.roomText) s.add(o.roomText); });
+    return [...s].filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+  }
   function shortSpec(o) {
     if (isPass(o)) return ['Durchgangszarge', 'ohne Türblatt'].join(' · ');
     if (o.type === 'door') return [`DIN ${o.din === 'L' ? 'links' : 'rechts'}`, o.doorType, o.frame].filter(Boolean).join(' · ');
@@ -472,7 +478,6 @@ window.OpeningsModule = function (RA) {
     if (!o) { RA.go('overview'); return; }
     const isDoor = o.type === 'door';
     $('#openingTitle').textContent = `${o.pos} · ${typeName(o)}`;
-    const rooms = [['', '– kein Raum –']].concat(RA.P.rooms.map((r) => [r.id, r.name]));
     const body = $('#openingBody');
     const scroll = body.scrollTop;
     const sashCards = isDoor ? '' : Array.from({ length: o.sashes }, (_, i) => sel(`sashTypes.${i}`, o.sashTypes[i], SASH_TYPES, o.sashes > 1 ? `Flügel ${i + 1}` : 'Öffnungsart')).join('');
@@ -489,7 +494,7 @@ window.OpeningsModule = function (RA) {
         <div class="grid2">
           <label class="field"><span>Position</span><input data-of="pos" autocomplete="off" value="${esc(o.pos)}"></label>
           <label class="field"><span>Anzahl gleiche</span><input data-of="qty" inputmode="numeric" value="${o.qty}"></label>
-          ${sel('roomId', o.roomId, rooms, 'Raum')}
+          <label class="field"><span>Raum</span><input data-of="roomText" list="opRoomList" autocomplete="off" enterkeyhint="done" placeholder="z. B. Bad OG" value="${esc(roomName(o))}"><datalist id="opRoomList">${roomSuggestions().map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist></label>
           ${txt('location', o.location, 'Ort / Bezeichnung', isDoor ? 'z. B. Flur → Bad' : 'z. B. Südseite links')}
         </div>
       </div>
@@ -657,6 +662,15 @@ window.OpeningsModule = function (RA) {
     } else if (k === 'qty') v = Math.max(1, Math.round(Number(String(el.value).replace(',', '.')) || 1));
     else v = el.value;
     if (k === 'pos') v = String(v).trim() || o.pos;
+    if (k === 'roomText') {
+      const t = String(v).trim();
+      const r = RA.P.rooms.find((x) => x.name.trim().toLowerCase() === t.toLowerCase());
+      RA.snapshot();
+      o.roomId = r ? r.id : '';
+      o.roomText = r ? '' : t;
+      RA.persist();
+      return;
+    }
     RA.snapshot();
     setPath(o, k, v);
     RA.persist();
@@ -715,12 +729,13 @@ window.OpeningsModule = function (RA) {
     }
     o.pos = nextPos(type);
     ensure(o);
-    const r = P.rooms.find((x) => x.id === P.activeRoom);
-    if (r) o.roomId = r.id;
+    const prev = P.openings[P.openings.length - 1];
+    if (prev) { o.roomId = prev.roomId || ''; o.roomText = prev.roomText || ''; }
     RA.snapshot();
     P.openings.push(o);
     RA.persist();
     RA.ui.openingId = o.id;
+    RA.ui.ovTab = 'openings';
     RA.go('opening');
     setTimeout(() => { const i = $('#openingBody [data-of="w.0"]'); if (i) i.focus(); }, 280);
   }
@@ -809,8 +824,8 @@ window.OpeningsModule = function (RA) {
     const items = list().slice().sort((a, b) => a.pos.localeCompare(b.pos, 'de', { numeric: true }));
     if (!items.length) return;
     const { doc, M, PW } = ctx;
-    doc.addPage();
-    ctx.header('Türen & Fenster');
+    if (ctx.samePage) { ctx.ensure(30); ctx.setY(ctx.getY() + 2); }
+    else { doc.addPage(); ctx.header('Türen & Fenster'); }
     const doors = items.filter((o) => o.type === 'door');
     const wins = items.filter((o) => o.type === 'window');
     if (doors.length) {
