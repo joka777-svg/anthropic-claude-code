@@ -112,8 +112,9 @@ window.OpeningsModule = function (RA) {
     if (dW > 5) r.checks.push({ lvl: 'warn', t: `Breite nicht parallel: ${mm(dW)} mm Unterschied – kleinstes Maß wird verwendet.` });
     if (dH > 5) r.checks.push({ lvl: 'warn', t: `Höhe ungleich: ${mm(dH)} mm Unterschied – kleinstes Maß wird verwendet.` });
     // Außenmaß (z. B. Außenlaibung) gegenüber dem Rohbaumaß innen
-    if (isNum(o.outer.w) && isNum(W)) r.outerDW = o.outer.w - W;
-    if (isNum(o.outer.h) && isNum(H)) r.outerDH = o.outer.h - H;
+    const useOuter = o.type === 'window';
+    if (useOuter && isNum(o.outer.w) && isNum(W)) r.outerDW = o.outer.w - W;
+    if (useOuter && isNum(o.outer.h) && isNum(H)) r.outerDH = o.outer.h - H;
     if (isNum(r.outerDW) || isNum(r.outerDH)) {
       const parts = [];
       if (isNum(r.outerDW)) parts.push(`Breite ${r.outerDW >= 0 ? '+' : ''}${mm(r.outerDW)} mm${r.outerDW > 0 ? ` (je Seite ${mm(r.outerDW / 2)})` : ''}`);
@@ -462,7 +463,7 @@ window.OpeningsModule = function (RA) {
       if (o.type === 'door' && isNum(c.wallMin)) main += `<div class="op-main sub"><span>Wandstärke (kleinstes Maß)</span><b>${mm(c.wallMin)} mm</b></div>`;
       if (o.type === 'window' && isNum(c.orderW)) main += `<div class="op-main sub"><span>Bestellmaß Rahmen</span><b>${mm(c.orderW)} × ${mm(c.orderH)} mm</b></div>`;
       if (o.type === 'window' && isNum(c.totalW)) main += `<div class="op-main sub"><span>Gesamt inkl. Verbreiterungen</span><b>${mm(c.totalW)} × ${mm(c.totalH)} mm</b></div>`;
-      if (isNum(o.outer.w) || isNum(o.outer.h)) main += `<div class="op-main sub"><span>Außenmaß</span><b>${mm(o.outer.w)} × ${mm(o.outer.h)} mm</b></div>`;
+      if (o.type === 'window' && (isNum(o.outer.w) || isNum(o.outer.h))) main += `<div class="op-main sub"><span>Außenmaß</span><b>${mm(o.outer.w)} × ${mm(o.outer.h)} mm</b></div>`;
     } else main = `<div class="op-main"><span>Rohbauöffnung</span><b class="muted">Breite und Höhe messen</b></div>`;
     return main + pills;
   }
@@ -510,10 +511,10 @@ window.OpeningsModule = function (RA) {
           ${numIn('h.0', o.h[0], 'links', false, 'links')}${numIn('h.1', o.h[1], 'Mitte', false, 'Mitte')}${numIn('h.2', o.h[2], 'rechts', false, 'rechts')}
           ${isDoor ? `<span class="m-lbl">Wand</span>
           ${numIn('wall.0', o.wall[0], 'oben', true, 'oben')}${numIn('wall.1', o.wall[1], 'Mitte', true, 'Mitte')}${numIn('wall.2', o.wall[2], 'unten', true, 'unten')}` : ''}
-          <span class="m-lbl">Außen</span>
-          ${numIn('outer.w', o.outer.w, 'Breite', false, 'Breite')}${numIn('outer.h', o.outer.h, 'Höhe', false, 'Höhe')}<span></span>
+          ${isDoor ? '' : `<span class="m-lbl">Außen</span>
+          ${numIn('outer.w', o.outer.w, 'Breite', false, 'Breite')}${numIn('outer.h', o.outer.h, 'Höhe', false, 'Höhe')}<span></span>`}
         </div>
-        <p class="hint" style="margin-top:8px">${isDoor ? 'Wand = Wandstärke in mm. ' : ''}Außenmaß: Öffnung auf der Außen- bzw. Gegenseite, z. B. wegen Verbreiterungen oder Anschlag.</p>
+        <p class="hint" style="margin-top:8px">${isDoor ? 'Wand = Wandstärke in mm.' : 'Außenmaß: Öffnung auf der Außenseite, z. B. wegen Verbreiterungen oder Anschlag.'}</p>
         ${isDoor ? `
           <div class="grid2" style="margin-top:10px">
             ${sel('heightRef', o.heightRef, HREFS, 'Höhe gemessen')}
@@ -855,7 +856,7 @@ window.OpeningsModule = function (RA) {
       add('Breite o / m / u', o.w.map(mm).join(' / ') + ' mm');
       add('Höhe l / m / r', o.h.map(mm).join(' / ') + ' mm');
       add('Maßgebend B × H', isNum(c.W) && isNum(c.H) ? `${mm(c.W)} × ${mm(c.H)} mm` : '–');
-      if (isNum(o.outer.w) || isNum(o.outer.h)) add('Außenmaß B × H', `${mm(o.outer.w)} × ${mm(o.outer.h)} mm`);
+      if (o.type === 'window' && (isNum(o.outer.w) || isNum(o.outer.h))) add('Außenmaß B × H', `${mm(o.outer.w)} × ${mm(o.outer.h)} mm`);
       if (o.type === 'door') {
         add('Höhe gemessen', HREFS.find((x) => x[0] === o.heightRef)[1] + (o.heightRef === 'RFB' ? `, Aufbau ${mm(o.floorBuild)} mm` : ''));
         if (o.heightRef !== 'OFF') add('Höhe ab OFF', `${mm(c.Hoff)} mm`);
