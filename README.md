@@ -11,7 +11,7 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
 ## Funktionen
 
 - **Türen & Fenster** (im Hauptfenster über „Räume | Türen & Fenster“):
-  - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Breite, Höhe und bei Türen die Wandstärke misst du an je 3 Stellen (oben, Mitte, unten). Das kleinste Maß zählt und erscheint in der Übersicht und im PDF. Die App warnt bei mehr als 5 mm Unterschied.
+  - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Breite und Höhe misst du an je 3 Stellen, das kleinste Maß zählt. Die Wandstärke bei Türen misst du links und rechts, hier zählt das größte Maß. Die Werte erscheinen in der Übersicht und im PDF. Die App warnt bei mehr als 5 mm Unterschied.
   - **Türen:**
     - Anschlag DIN links oder rechts, Aufschlag, Türart, Zarge, Schloss.
     - Die Höhe misst du ab Fertigfußboden, ab Rohfußboden (abzüglich Aufbau) oder ab Meterriss.
@@ -20,7 +20,7 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
     - 1 bis 3 Flügel mit Öffnungsart (Dreh-Kipp, Dreh, Kipp, Fest, Schiebe), Oberlicht, Balkontür.
     - Dazu Material, Verglasung, Farben, Rollladen, Brüstung und Einbausituation.
     - Das **Bestellmaß** ist die Öffnung abzüglich der Fugen.
-  - **Fensterbänke innen und außen:** Länge und Tiefe werden aus Laibungstiefe, Überstand, seitlicher Einbindung und Einschub berechnet. Dazu kommt die Laibungsfläche innen.
+  - **Fensterbänke innen und außen** (nicht bei Balkontüren): Länge und Tiefe werden aus Laibungstiefe, Überstand, seitlicher Einbindung und Einschub berechnet. Dazu kommt die Laibungsfläche innen.
   - **Fotos** je Position (Kamera oder Mediathek). Sie werden auf dem Gerät gespeichert.
   - Für jede Position zeichnet die App eine **Ansicht** mit Öffnungssymbolen. Das Dreieck öffnet sich zur Anschlag- bzw. Bandseite, die Spitze zeigt zur Griffseite.
   - Im **PDF** erscheinen Tabellen für Türen, Fenster und Fensterbänke. Dazu kommt je Position ein Detailblock mit Zeichnung, allen Werten und Fotos.
