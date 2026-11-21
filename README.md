@@ -11,9 +11,9 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
 ## Funktionen
 
 - **Türen & Fenster** (im Hauptfenster über „Räume | Türen & Fenster“):
-  - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Die Rohbauöffnung misst du an je 3 Stellen, dazu die Diagonalen. Das kleinste Maß zählt, und die App warnt, wenn die Öffnung schief oder nicht parallel ist.
+  - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Breite, Höhe und bei Türen die Wandstärke misst du an je 3 Stellen (oben, Mitte, unten). Das kleinste Maß zählt und erscheint in der Übersicht und im PDF. Die App warnt bei mehr als 5 mm Unterschied.
   - **Türen:**
-    - Wandstärke links und rechts, Anschlag DIN links oder rechts, Aufschlag, Türart, Zarge, Schloss.
+    - Anschlag DIN links oder rechts, Aufschlag, Türart, Zarge, Schloss.
     - Die Höhe misst du ab Fertigfußboden, ab Rohfußboden (abzüglich Aufbau) oder ab Meterriss.
     - Die App zeigt automatisch das **Normmaß** nach DIN 18101 (Rohbaurichtmaß und Türblatt) oder meldet ein Sondermaß.
   - **Fenster:**
