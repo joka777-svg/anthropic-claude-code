@@ -30,5 +30,9 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: www
+      # GitHub registriert das hochgeladene Paket manchmal mit Verzögerung –
+      # ohne kurze Pause findet deploy-pages es gelegentlich nicht.
+      - name: Kurz warten, bis das Paket registriert ist
+        run: sleep 20
       - id: deployment
         uses: actions/deploy-pages@v5
