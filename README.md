@@ -10,6 +10,14 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
 
 ## Funktionen
 
+- **Abnahmeprotokoll** (Karte unten im Hauptfenster):
+  - Datum, Ort, Auftraggeber und Auftragnehmer. Die Firma merkt sich die App für alle Projekte.
+  - Die abgenommenen Leistungen übernimmst du per Knopf aus dem Aufmaß.
+  - Ergebnis: ohne Mängel, mit Mängeln (Mängelliste mit Raum und Frist) oder verweigert (mit Grund).
+  - Bemerkungen und ein anpassbarer Abnahmetext.
+  - **Unterschrift von Kunde und Auftragnehmer mit dem Finger** auf dem Bildschirm, mit Zeitstempel.
+  - Nach der Unterschrift des Kunden ist das Protokoll gesperrt. Zum Ändern muss die Unterschrift gelöscht werden.
+  - Als PDF gibt es nur das Protokoll oder das Protokoll mit dem kompletten Aufmaß dahinter.
 - **Türen & Fenster** (im Hauptfenster über „Räume | Türen & Fenster“):
   - Jede Position (T1, F1 …) wird einem Raum zugeordnet. Breite und Höhe misst du an je 3 Stellen, das kleinste Maß zählt. Die Wandstärke bei Türen misst du links und rechts, hier zählt das größte Maß. Die Werte erscheinen in der Übersicht und im PDF. Die App warnt bei mehr als 5 mm Unterschied.
   - **Türen:**

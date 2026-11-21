@@ -1395,7 +1395,7 @@
         <button class="${ui.ovTab === 'openings' ? 'active' : ''}" data-act="ovTab" data-tab="openings">Türen &amp; Fenster <small>${nOps}</small></button>
       </div>` : '';
     if (OP && ui.ovTab === 'openings') {
-      $('#overviewBody').innerHTML = tabs + OP.renderList();
+      $('#overviewBody').innerHTML = tabs + OP.renderList() + (HM ? HM.cardHtml() : '');
       $('#ovTotals').innerHTML = OP.totalsHtml();
       return;
     }
@@ -1413,7 +1413,8 @@
           <tr><td>Sockelleiste inkl. ${fmt(P.wasteSkirt, 0)} % Verschnitt</td><td>${fmt(pc.skW)} m</td></tr>
           ${P.piece > 0 ? `<tr><td>Leisten à ${fmt(P.piece)} m</td><td>${pc.pieces} Stück</td></tr>` : ''}
         </table>
-      </div>` : ''}`;
+      </div>` : ''}
+      ${HM ? HM.cardHtml() : ''}`;
     $('#ovTotals').innerHTML = `
       <div class="tot-main"><span>Gesamtfläche</span><b>${fmt(pc.net)} m²</b></div>
       <div class="tot-side"><div><b>${fmt(pc.skirting)} m</b><span>Sockelleiste</span></div><div><b>${P.rooms.length}</b><span>Räume</span></div></div>`;
@@ -1481,6 +1482,8 @@
     $('#screenOverview').hidden = ui.screen !== 'overview';
     $('#screenRoom').hidden = ui.screen !== 'room';
     $('#screenOpening').hidden = ui.screen !== 'opening';
+    $('#screenHandover').hidden = ui.screen !== 'handover';
+    if (ui.screen === 'handover' && HM) { HM.render(); return; }
     if (ui.screen === 'opening' && OP) { OP.renderEditor(); return; }
     if (ui.screen === 'projects') { renderProjects(); return; }
     if (ui.screen === 'overview') { renderOverview(); return; }
@@ -1501,6 +1504,7 @@
     ui.sel = null;
     lastSig = '';
     if (screen === 'opening') $('#openingBody').scrollTop = 0;
+    if (screen === 'handover') $('#handoverBody').scrollTop = 0;
     renderAll();
     if (screen === 'room') {
       W = 0; H = 0;
@@ -1908,7 +1912,7 @@
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.target.matches('input,textarea')) { e.preventDefault(); undo(); }
     if (e.key === 'Escape' && ui.mode === 'draw') actions.cancelDraw();
-    else if (e.key === 'Escape' && (ui.screen === 'room' || ui.screen === 'opening') && !document.querySelector('dialog[open], .photo-viewer')) actions.goOverview();
+    else if (e.key === 'Escape' && (ui.screen === 'room' || ui.screen === 'opening' || ui.screen === 'handover') && !document.querySelector('dialog[open], .photo-viewer')) actions.goOverview();
   });
 
   $('#fileImport').addEventListener('change', async (e) => {
@@ -2038,13 +2042,14 @@
     }
   }
 
-  function buildPdf() {
+  function buildPdf(opts = {}) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
     // Standardschrift kennt nur WinAnsi-Zeichen: Sonderzeichen ersetzen
     const clean = (t) => String(t).replace(/[\u2212]/g, '-').replace(/[^\x00-\xFF\u2013\u2014\u2018-\u201E\u2022\u2026\u20AC]/g, '?');
     const rawText = doc.text.bind(doc);
     doc.text = (t, ...rest) => rawText(Array.isArray(t) ? t.map(clean) : clean(t), ...rest);
+    if (opts.prefix) { opts.prefix(doc); doc.addPage(); }
     const PW = 210, PH = 297, M = 16;
     const pc = calcProject();
     const accent = [29, 78, 216];
@@ -2347,9 +2352,12 @@
     $, esc, uid, toast, ui,
     get P() { return P; },
     persist, snapshot, renderAll, go,
+    get db() { return db; },
+    calcProject: () => calcProject(), fmt, buildPdf, deliverFile, fileBase,
   };
   const OP = window.OpeningsModule ? window.OpeningsModule(RA) : null;
   if (OP) { OP.preload(P).catch(() => {}); setTimeout(() => OP.gc(db), 3000); }
+  const HM = window.HandoverModule ? window.HandoverModule(RA) : null;
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(svg);
   renderAll();
@@ -2359,5 +2367,5 @@
   }
 
   // für Tests
-  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, allDiags, OP, get project() { return P; }, get ui() { return ui; } };
+  window.__raumaufmass = { G, Shapes, calcRoom, calcProject, buildPdf, allDiags, OP, get HM() { return HM; }, get project() { return P; }, get ui() { return ui; } };
 })();

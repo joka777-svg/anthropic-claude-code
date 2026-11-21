@@ -111,6 +111,20 @@
     <div class="screen-body narrow" id="openingBody"></div>
   </section>
 
+  <!-- ============ 5. Abnahmeprotokoll ============ -->
+  <section id="screenHandover" class="screen" hidden>
+    <header class="nav">
+      <div class="nav-row">
+        <button class="nav-btn back" data-act="goOverview">‹ Übersicht</button>
+        <div class="nav-title">Abnahmeprotokoll</div>
+        <div class="nav-actions">
+          <button class="nav-btn strong" data-act="goOverview">Fertig</button>
+        </div>
+      </div>
+    </header>
+    <div class="screen-body narrow" id="handoverBody"></div>
+  </section>
+
   <!-- ============ Dialog: Projekt ============ -->
   <dialog id="dlgProject" class="dialog">
     <form method="dialog" id="formProject">
@@ -211,6 +225,7 @@
   </script>
   <script src="vendor/jspdf.umd.min.js"></script>
   <script src="openings.js"></script>
+  <script src="handover.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
