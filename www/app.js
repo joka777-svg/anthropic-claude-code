@@ -2010,8 +2010,24 @@
   }
 
   // ---------------------------------------------------------------- PDF
-  function exportPdf() {
-    if (!window.jspdf) { toast('PDF-Modul nicht geladen'); return; }
+  // Fehler beim Laden von jsPDF merken (für eine verständliche Meldung)
+  let pdfLoadError = '';
+  window.addEventListener('error', (e) => { if (e && e.filename && /jspdf/.test(e.filename)) pdfLoadError = e.message || 'Skriptfehler'; });
+  function loadPdfModule() {
+    return new Promise((res) => {
+      const s = document.createElement('script');
+      s.src = 'vendor/jspdf.umd.min.js?r=' + Date.now();
+      s.onload = () => res(!!window.jspdf);
+      s.onerror = () => { pdfLoadError = pdfLoadError || 'Datei nicht erreichbar'; res(false); };
+      document.head.appendChild(s);
+    });
+  }
+  async function exportPdf() {
+    if (!window.jspdf) {
+      toast('PDF-Modul wird geladen …');
+      const ok = await loadPdfModule();
+      if (!ok) { toast(`PDF-Modul nicht geladen${pdfLoadError ? ` (${pdfLoadError})` : ''} – bitte die App mit Internet neu öffnen`); return; }
+    }
     if (!P.rooms.some((r) => r.points.length >= 3) && !(P.openings || []).length) { toast('Noch nichts aufgemessen – erst einen Raum, eine Tür oder ein Fenster anlegen'); return; }
     try {
       const doc = buildPdf();

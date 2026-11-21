@@ -17,6 +17,7 @@
     "jspdf": "4.2.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.2"
+    "@capacitor/cli": "8.6.2",
+    "esbuild": "^0.28.2"
   }
 }

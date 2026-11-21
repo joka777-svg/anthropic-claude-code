@@ -88,6 +88,7 @@ button { cursor: pointer; }
 /* Navigationsleiste */
 .nav {
   padding: calc(6px + var(--safe-top)) 10px 8px;
+  background: var(--bg);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px);
   border-bottom: 1px solid var(--line);
@@ -164,7 +165,7 @@ button { cursor: pointer; }
 .rc-stats b { color: var(--text); font-size: 15px; }
 .room-card.add {
   align-items: center; justify-content: center; gap: 6px; min-height: 200px; color: var(--accent); font-weight: 700;
-  background: transparent; border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none;
+  background: transparent; border: 2px dashed var(--accent); border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none;
 }
 .room-card.add .plus { font-size: 34px; line-height: 1; }
 .badge { align-self: flex-start; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--surface-3); color: var(--muted); margin-top: 2px; }
@@ -221,7 +222,7 @@ button { cursor: pointer; }
 table.walls { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 table.walls th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px; }
 table.walls td { padding: 5px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
-table.walls tr.sel td { background: color-mix(in srgb, var(--sel) 14%, transparent); }
+table.walls tr.sel td { background: rgba(245,158,11,.14); background: color-mix(in srgb, var(--sel) 14%, transparent); }
 table.walls .wname { font-weight: 700; white-space: nowrap; }
 table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; min-width: 38px; height: 38px; font-size: 15px; }
@@ -241,7 +242,7 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 }
 .plan-toolbar > * { pointer-events: auto; }
 .seg {
-  display: inline-flex; background: color-mix(in srgb, var(--surface-2) 90%, transparent); border-radius: 12px; padding: 3px;
+  display: inline-flex; background: var(--surface-2); background: color-mix(in srgb, var(--surface-2) 90%, transparent); border-radius: 12px; padding: 3px;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--shadow);
 }
 .seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--muted); }
@@ -249,7 +250,8 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .tool-group { display: inline-flex; gap: 6px; }
 .tool {
   width: 40px; height: 40px; border-radius: 12px; border: 0; font-size: 19px; color: var(--muted);
-  background: color-mix(in srgb, var(--surface-2) 90%, transparent); box-shadow: var(--shadow);
+  background: var(--surface-2);
+  background: var(--surface-2); background: color-mix(in srgb, var(--surface-2) 90%, transparent); box-shadow: var(--shadow);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .tool.on { color: var(--accent); background: var(--accent-soft); }
@@ -392,7 +394,8 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .card-del {
   position: absolute; top: 8px; right: 8px; width: 34px; height: 34px; border-radius: 50%; border: 0;
   display: grid; place-items: center; color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  background: var(--surface);
+  background: var(--surface); background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: 0 1px 4px rgba(0,0,0,.12);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 1;
 }
 .card-del svg { width: 18px; height: 18px; }
@@ -467,7 +470,7 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .picto { overflow: visible; }
 .p-frame { fill: var(--surface-3); stroke: var(--wall); }
 .p-leaf { fill: var(--surface); stroke: var(--wall); }
-.p-glass { fill: color-mix(in srgb, var(--accent) 12%, var(--surface)); stroke: var(--wall); }
+.p-glass { fill: var(--accent-soft); fill: color-mix(in srgb, var(--accent) 12%, var(--surface)); stroke: var(--wall); }
 .p-box { fill: var(--surface-3); stroke: var(--wall); }
 .p-hinge { fill: var(--wall); stroke: none; }
 .p-sym { stroke: var(--accent); fill: none; }
@@ -482,7 +485,7 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .ph { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; border: 0; padding: 0; background: var(--surface-2); }
 .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ph.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); cursor: pointer; }
+.ph.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed var(--accent); border: 2px dashed color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); cursor: pointer; }
 .ph.add span { font-size: 26px; }
 .ph.add small { font-weight: 700; font-size: 12px; }
 .photo-viewer {
