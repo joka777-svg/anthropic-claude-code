@@ -25,6 +25,7 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
     - Die Höhe misst du ab Fertigfußboden, ab Rohfußboden (abzüglich Aufbau) oder ab Meterriss.
     - Die App zeigt automatisch das **Normmaß** nach DIN 18101 (Rohbaurichtmaß und Türblatt) oder meldet ein Sondermaß.
   - **Türen – Maßart:** Wähle zwischen Rohbaumaß (Maueröffnung) und Türmaß (Türblatt B × H × Dicke). Beim Türmaß erkennt die App Norm-Türblätter.
+  - **Türen – Zargenmaß:** Die Zarge bestellst du als Normmaß, z. B. 860 × 1985 (RRM 885 × 2005). Die App schlägt das passende Maß vor und warnt, wenn es nicht zur Öffnung passt. Alternativ bestellst du nach Rohbaumaß als Sonderzarge. Dazu kommt die Zargenbreite bzw. Wandstärke.
   - **Türen – Kürzen:** Türblatt kürzen, Türelement kürzen oder Zarge ausklinken. Dazu „um wie viel mm“ und „Anzahl Türen“.
   - **Türen – Zusatzarbeiten:** Wandanschlüsse ausfugen, Beiputzen, Bandtaschen klopfen und Freitext. Das PDF fasst alles in der Tabelle „Zusatzarbeiten Türen“ mit Stückzahlen und Positionen zusammen. Ins Abnahmeprotokoll wird es auf Knopfdruck übernommen.
   - **Fenster:**

@@ -65,6 +65,7 @@ window.OpeningsModule = function (RA) {
         doorType: 'Zimmertür', din: 'L', openIn: true, frame: 'Umfassungszarge', lock: 'BB (Buntbart)',
         heightRef: 'OFF', floorBuild: null, finish: '',
         measureMode: 'rohbau', leafT: null,
+        frameSize: { mode: 'norm', w: null, h: null }, frameDepth: null,
         cut: { leaf: false, element: false, notch: false, mm: null, qty: null },
         works: { joints: false, plaster: false, hinges: false },
         worksNote: '',
@@ -94,6 +95,8 @@ window.OpeningsModule = function (RA) {
       out.cut = Object.assign({ leaf: false, element: false, notch: false, mm: null, qty: null }, o.cut || {});
       out.works = Object.assign({ joints: false, plaster: false, hinges: false }, o.works || {});
       if (out.measureMode !== 'tuer') out.measureMode = 'rohbau';
+      out.frameSize = Object.assign({ mode: 'norm', w: null, h: null }, o.frameSize || {});
+      if (out.frameSize.mode !== 'rohbau') out.frameSize.mode = 'norm';
     }
     if (out.type === 'window') {
       out.sillIn = Object.assign(defaults('window').sillIn, o.sillIn || {});
@@ -167,7 +170,7 @@ window.OpeningsModule = function (RA) {
         else {
           const cw = NORM_W.reduce((a, b) => (Math.abs(b[0] - W) < Math.abs(a[0] - W) ? b : a));
           const ch = NORM_H.reduce((a, b) => (Math.abs(b[0] - Hoff) < Math.abs(a[0] - Hoff) ? b : a));
-          r.near = { w: cw[0], h: ch[0] };
+          r.near = { w: cw[0], h: ch[0], bw: cw[1], bh: ch[1] };
           r.checks.unshift({ lvl: 'info', t: `Sondermaß. Nächstes Normmaß ${cw[0]} × ${ch[0]} mm (Abweichung ${W - cw[0] >= 0 ? '+' : ''}${mm(W - cw[0])} / ${Hoff - ch[0] >= 0 ? '+' : ''}${mm(Hoff - ch[0])} mm).` });
         }
       }
@@ -175,7 +178,9 @@ window.OpeningsModule = function (RA) {
       r.wallMin = wl.length ? Math.min(...wl) : null;
       r.wallMax = wl.length ? Math.max(...wl) : null;
       if (wl.length > 1 && r.wallMax - r.wallMin > 5) r.checks.push({ lvl: 'warn', t: `Wandstärke ungleich (${mm(r.wallMin)}–${mm(r.wallMax)} mm) – größtes Maß wird verwendet, Zarge mit Verstellbereich wählen.` });
-    } else {
+    }
+    if (o.type === 'door') frameCalc(o, r, W, H);
+    if (o.type !== 'door') {
       r.orderW = isNum(W) ? W - 2 * (o.gapSide || 0) : null;
       r.orderH = isNum(H) ? H - (o.gapTop || 0) - (o.gapBottom || 0) : null;
       const e = o.ext;
@@ -206,6 +211,43 @@ window.OpeningsModule = function (RA) {
   }
   const doorWorkLabels = (o) => WORKS.filter(([g, f]) => o[g] && o[g][f]).map(([, , l]) => l);
 
+  /** Zargenmaß: Normmaß (Türblatt-Normgröße) oder Sonderzarge nach Rohbaumaß */
+  function frameCalc(o, r, W, H) {
+    const fs = o.frameSize;
+    const depth = isNum(o.frameDepth) ? o.frameDepth : r.wallMax;
+    if (fs.mode === 'rohbau') {
+      r.frame = { mode: 'rohbau', w: isLeaf(o) ? null : W, h: isLeaf(o) ? null : r.Hoff, depth };
+      return;
+    }
+    const sug = r.norm || r.near;
+    const bw = isNum(fs.w) ? fs.w : (sug ? sug.bw : 860);
+    const bh = isNum(fs.h) ? fs.h : (sug ? sug.bh : 1985);
+    const rw = (NORM_W.find(([, b]) => b === bw) || [null])[0];
+    const rh = (NORM_H.find(([, b]) => b === bh) || [null])[0];
+    r.frame = { mode: 'norm', bw, bh, rw, rh, depth, auto: !isNum(fs.w) && !isNum(fs.h) };
+    // Passt die gewählte Normzarge zur gemessenen Öffnung?
+    if (isLeaf(o)) {
+      if (isNum(W) && isNum(H) && (Math.abs(W - bw) > 3 || Math.abs(H - bh) > 3)) {
+        r.checks.push({ lvl: 'warn', t: `Gewählte Normzarge ${bw} × ${bh} passt nicht zum gemessenen Türblatt ${mm(W)} × ${mm(H)} mm.` });
+      }
+    } else if (isNum(W) && isNum(r.Hoff) && rw && rh) {
+      const okW = W >= rw && W <= rw + NORM_TOL, okH = r.Hoff >= rh && r.Hoff <= rh + NORM_TOL;
+      if (!okW || !okH) {
+        const p = [];
+        if (!okW) p.push(`Breite ${mm(W)} mm (benötigt ${rw}–${rw + NORM_TOL})`);
+        if (!okH) p.push(`Höhe ${mm(r.Hoff)} mm (benötigt ${rh}–${rh + NORM_TOL})`);
+        r.checks.push({ lvl: 'warn', t: `Normzarge ${bw} × ${bh} (RRM ${rw} × ${rh}) passt nicht zur Öffnung: ${p.join(', ')}.` });
+      }
+    }
+  }
+  function frameText(o, c) {
+    const f = c.frame;
+    if (!f) return '';
+    const d = isNum(f.depth) ? `, Zargenbreite ${mm(f.depth)} mm` : '';
+    if (f.mode === 'rohbau') return `nach Rohbaumaß${isNum(f.w) ? ` ${mm(f.w)} × ${mm(f.h)} mm` : ''} (Sondermaß)${d}`;
+    return `Normmaß ${f.bw} × ${f.bh}${f.rw ? ` (RRM ${f.rw} × ${f.rh})` : ''}${d}`;
+  }
+
   function nextPos(type) {
     const pre = type === 'door' ? 'T' : 'F';
     let n = 1;
@@ -223,7 +265,11 @@ window.OpeningsModule = function (RA) {
   }
   function shortSpec(o) {
     if (isPass(o)) return ['Durchgangszarge', 'ohne Türblatt'].join(' · ');
-    if (o.type === 'door') return [`DIN ${o.din === 'L' ? 'links' : 'rechts'}`, o.doorType, o.frame].filter(Boolean).join(' · ');
+    if (o.type === 'door') {
+      const c = calc(o);
+      const fz = c.frame ? (c.frame.mode === 'norm' ? `Zarge ${c.frame.bw}×${c.frame.bh}` : 'Zarge nach Rohbau') : '';
+      return [`DIN ${o.din === 'L' ? 'links' : 'rechts'}`, o.doorType, fz].filter(Boolean).join(' · ');
+    }
     const s = o.sashTypes.slice(0, o.sashes).join(' | ');
     return [`${o.sashes}-flg. ${s}`, o.transom ? 'Oberlicht' : '', o.shutter !== 'kein' ? o.shutter : ''].filter(Boolean).join(' · ');
   }
@@ -596,6 +642,19 @@ window.OpeningsModule = function (RA) {
           ${sel('frame', o.frame, FRAMES, 'Zarge')}
           ${isPass(o) ? '<span></span>' : sel('doorType', o.doorType, DOOR_TYPES, 'Türart')}
         </div>
+        ${(() => {
+          const c = calc(o);
+          const f = c.frame || {};
+          const fsm = o.frameSize.mode;
+          return `<div class="field" style="margin-top:10px"><span>Zargenmaß</span>${seg('frameSize.mode', fsm, [['norm', 'Normmaß'], ['rohbau', 'nach Rohbaumaß']])}</div>
+          ${fsm === 'norm' ? `<div class="grid2" style="margin-top:8px">
+            ${sel('frameSize.w', String(f.bw), NORM_W.map(([r, b]) => [String(b), `${b} (RRM ${r})`]), 'Breite')}
+            ${sel('frameSize.h', String(f.bh), NORM_H.map(([r, b]) => [String(b), `${b} (RRM ${r})`]), 'Höhe')}
+          </div>
+          ${f.auto ? '<p class="hint" style="margin-top:6px">Vorschlag passend zur Messung – bei Bedarf ändern.</p>' : ''}`
+          : `<p class="hint" style="margin-top:8px">Sonderzarge nach der gemessenen Rohbauöffnung${isNum(f.w) ? `: <b>${mm(f.w)} × ${mm(f.h)} mm</b>` : ''}.</p>`}
+          <div class="grid2" style="margin-top:8px">${numIn('frameDepth', o.frameDepth, isNum(c.wallMax) ? mm(c.wallMax) : 'z. B. 120', true, 'Zargenbreite / Wandstärke (mm)')}<span></span></div>`;
+        })()}
         ${isPass(o) ? '<p class="hint" style="margin-top:8px">Durchgangszarge: Zarge ohne Türblatt – kein Anschlag und kein Schloss nötig.</p>' : `
         <div class="field" style="margin-top:10px"><span>Anschlag</span>${seg('din', o.din, [['L', 'DIN links'], ['R', 'DIN rechts']])}</div>
         <p class="hint">DIN links: Von der Seite gesehen, zu der die Tür aufgeht, sitzen die Bänder links.</p>
@@ -717,8 +776,8 @@ window.OpeningsModule = function (RA) {
   }
 
   // Felder, die die Formularstruktur ändern → komplett neu zeichnen
-  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony', 'frame', 'outer.w', 'outer.h', 'cut.leaf', 'cut.element', 'cut.notch']);
-  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal', 'ext.l', 'ext.r', 'ext.t', 'ext.b', 'leafT', 'cut.mm',
+  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony', 'frame', 'outer.w', 'outer.h', 'cut.leaf', 'cut.element', 'cut.notch', 'frameSize.w', 'frameSize.h']);
+  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal', 'ext.l', 'ext.r', 'ext.t', 'ext.b', 'leafT', 'cut.mm', 'frameDepth',
     'sillIn.front', 'sillIn.side', 'sillIn.insert', 'sillOut.front', 'sillOut.side', 'sillOut.insert']);
   function setPath(o, path, v) {
     const ks = path.split('.');
@@ -741,7 +800,8 @@ window.OpeningsModule = function (RA) {
       v = parseMM(el.value, SMALL_KEYS.has(k) || el.dataset.small === '1');
       if (Number.isNaN(v) || (isNum(v) && (v < 0 || v > 20000))) { toast('Bitte eine gültige Länge eingeben (z. B. 885 oder 88,5 cm)'); el.value = ''; return; }
       el.value = mmIn(v);
-    } else if (k === 'qty' || k === 'cut.qty') v = Math.max(1, Math.round(Number(String(el.value).replace(',', '.')) || 1));
+    } else if (k === 'frameSize.w' || k === 'frameSize.h') v = Number(el.value);
+    else if (k === 'qty' || k === 'cut.qty') v = Math.max(1, Math.round(Number(String(el.value).replace(',', '.')) || 1));
     else v = el.value;
     if (k === 'pos') v = String(v).trim() || o.pos;
     if (k === 'roomText') {
@@ -754,6 +814,12 @@ window.OpeningsModule = function (RA) {
       return;
     }
     RA.snapshot();
+    // Normzarge: beim ersten Ändern auch das andere Maß festhalten
+    if ((k === 'frameSize.w' || k === 'frameSize.h') && o.frameSize) {
+      const f = calc(o).frame || {};
+      if (!isNum(o.frameSize.w)) o.frameSize.w = f.bw;
+      if (!isNum(o.frameSize.h)) o.frameSize.h = f.bh;
+    }
     setPath(o, k, v);
     RA.persist();
     if (STRUCT.has(k)) renderEditor(); else refreshComputed();
@@ -804,7 +870,7 @@ window.OpeningsModule = function (RA) {
     const o = defaults(type);
     if (last) {
       const keep = type === 'door'
-        ? ['doorType', 'frame', 'lock', 'heightRef', 'floorBuild', 'finish', 'wall', 'measureMode']
+        ? ['doorType', 'frame', 'lock', 'heightRef', 'floorBuild', 'finish', 'wall', 'measureMode', 'frameDepth']
         : ['material', 'glazing', 'colorIn', 'colorOut', 'shutter', 'shutterDrive', 'mount', 'gapSide', 'gapTop', 'gapBottom', 'sillIn', 'sillOut'];
       keep.forEach((k) => { o[k] = JSON.parse(JSON.stringify(last[k])); });
       if (type === 'window') { o.sillIn.reveal = last.sillIn.reveal; o.sillOut.reveal = last.sillOut.reveal; }
@@ -862,7 +928,7 @@ window.OpeningsModule = function (RA) {
       if (k === 'sashes') v = +v;
       if (k === 'openIn') v = v === '1';
       RA.snapshot();
-      o[k] = v;
+      setPath(o, k, v);
       RA.persist();
       renderEditor();
       return;
@@ -913,7 +979,7 @@ window.OpeningsModule = function (RA) {
     if (doors.length) {
       ctx.heading('Türen');
       ctx.table([{ label: 'Pos', w: 14 }, { label: 'Raum / Ort', w: 38 }, { label: 'Stk', w: 10, align: 'right' }, { label: 'Maß B × H', w: 34, align: 'right' }, { label: 'Wand', w: 18, align: 'right' }, { label: 'DIN', w: 14 }, { label: 'Art / Zarge', w: 50 }],
-        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}${isLeaf(o) ? ' TB' : ''}` : '–', isNum(c.wallMax) ? mm(c.wallMax) : '–', isPass(o) ? '–' : o.din === 'L' ? 'links' : 'rechts', isPass(o) ? 'Durchgangszarge' : `${o.doorType}, ${o.frame}`] }; }), { rowH: 6 });
+        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}${isLeaf(o) ? ' TB' : ''}` : '–', isNum(c.wallMax) ? mm(c.wallMax) : '–', isPass(o) ? '–' : o.din === 'L' ? 'links' : 'rechts', (isPass(o) ? 'Durchgangszarge' : `${o.doorType}, ${o.frame}`) + (c.frame ? (c.frame.mode === 'norm' ? ` ${c.frame.bw}×${c.frame.bh}` : ' Sondermaß') : '')] }; }), { rowH: 6 });
     }
     if (doors.some(isLeaf)) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(95, 100, 112); doc.text('TB = Türmaß (Türblatt), sonst Rohbaumaß', M, ctx.getY() - 1); ctx.setY(ctx.getY() + 6); }
     const ws = workSummary();
@@ -961,6 +1027,7 @@ window.OpeningsModule = function (RA) {
         add('Wandstärke (größtes)', isNum(c.wallMax) ? `${mm(c.wallMax)} mm` : '–');
         if (isLeaf(o)) add('Normmaß', c.norm ? `Türblatt ${c.norm.bw} × ${c.norm.bh} (RRM ${c.norm.w} × ${c.norm.h})` : c.near ? `Sondermaß (nächstes Normblatt ${c.near.bw} × ${c.near.bh})` : '–');
         else add('Normmaß', c.norm ? `RRM ${c.norm.w} × ${c.norm.h}${isPass(o) ? '' : `, Türblatt ${c.norm.bw} × ${c.norm.bh}`}` : c.near ? `Sondermaß (nächste Norm ${c.near.w} × ${c.near.h})` : '–');
+        add('Zargenmaß', frameText(o, c));
         if (isPass(o)) add('Zarge', 'Durchgangszarge, ohne Türblatt');
         else {
           add('Anschlag', `DIN ${o.din === 'L' ? 'links' : 'rechts'}, Aufschlag ${o.openIn ? 'in den Raum' : 'aus dem Raum'}`);
