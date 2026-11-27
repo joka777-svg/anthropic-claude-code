@@ -420,11 +420,53 @@
   db.seeded = true;
   let P = db.projects[db.current] || Object.values(db.projects)[0] || newProject('Neues Projekt');
 
+  let saveFailed = false;
   function persist() {
     P.updated = Date.now();
     db.current = P.id;
-    try { localStorage.setItem(STORE, JSON.stringify(db)); } catch (e) { toast('Speichern fehlgeschlagen'); }
+    try {
+      localStorage.setItem(STORE, JSON.stringify(db));
+      if (saveFailed) { saveFailed = false; renderStorageNotice(); }
+    } catch (e) {
+      saveFailed = true;
+      toast('Speichern fehlgeschlagen – Gerätespeicher voll oder privater Modus?');
+      renderStorageNotice();
+    }
   }
+
+  // ---------------------------------------------------------------- Speichern absichern
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = () => !!(navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  function storageWorks() {
+    try { localStorage.setItem('__ra_test', '1'); localStorage.removeItem('__ra_test'); return true; } catch (e) { return false; }
+  }
+  function renderStorageNotice() {
+    const el = document.getElementById('storageNotice');
+    if (!el) return;
+    let msg = '';
+    if (!storageWorks() || saveFailed) {
+      msg = '⚠️ <b>Speichern nicht möglich.</b> Bitte keinen privaten Safari-Tab verwenden und prüfen, ob auf dem iPhone noch Speicher frei ist.';
+    } else if (isIOS && !isStandalone() && !isNative()) {
+      let dismissed = false;
+      try { dismissed = sessionStorage.getItem('ra_tab_hint') === '1'; } catch (e) { /* */ }
+      if (!dismissed) msg = 'ℹ️ <b>Du nutzt die App im Safari-Tab.</b> Daten im Tab und in der App vom Home-Bildschirm sind auf dem iPhone <b>getrennt</b>, und iOS kann Daten in Tabs nach einigen Tagen löschen. Bitte <b>Teilen → „Zum Home-Bildschirm“</b> und die App immer über das Icon starten. <button class="btn small" data-act="hideTabHint">OK</button>';
+    }
+    el.innerHTML = msg;
+    el.hidden = !msg;
+  }
+  /** Offenes Eingabefeld übernehmen, bevor die App in den Hintergrund geht.
+   *  Das Verlassen des Feldes löst dessen normale Speicherung aus; alles andere ist bereits gespeichert. */
+  function flushInput() {
+    const a = document.activeElement;
+    if (a && a.matches && a.matches('input, textarea, select')) {
+      try { a.blur(); } catch (e) { /* */ }
+    }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushInput(); });
+  window.addEventListener('pagehide', flushInput);
+  // Dauerhaften Speicher anfordern (iOS/Safari löscht dann nicht bei Speicherknappheit)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* */ }
 
   const ui = {
     tab: 'measure',
@@ -1752,6 +1794,7 @@
     delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
     openRoom: (el) => openRoom(el.dataset.id),
+    hideTabHint: () => { try { sessionStorage.setItem('ra_tab_hint', '1'); } catch (e) { /* */ } renderStorageNotice(); },
     ovTab: (el) => { ui.ovTab = el.dataset.tab; renderAll(); },
     delRoomCard: (el) => {
       const idx = P.rooms.findIndex((x) => x.id === el.dataset.id);
@@ -2361,6 +2404,7 @@
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(svg);
   renderAll();
+  renderStorageNotice();
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
