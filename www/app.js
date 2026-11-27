@@ -412,8 +412,8 @@
         }
       }
     } catch (e) { /* leer oder defekt -> neu */ }
-    const p = demoProject();
-    return { projects: { [p.id]: p }, current: p.id, seeded: true };
+    // Erster Start: leere Projektliste (Beispielprojekt nur auf Wunsch)
+    return { projects: {}, current: null, seeded: true };
   }
 
   let db = loadDb();
@@ -1477,7 +1477,7 @@
         <button class="card-del inline" data-act="delProjectCard" data-id="${p.id}" aria-label="Projekt ${esc(p.name)} löschen" title="Projekt löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="chev">›</span>
       </div>`;
-    }).join('') : '<div class="empty-state"><div class="big-icon">📁</div><h2>Noch keine Projekte</h2><p>Lege ein Projekt an, z. B. „Wohnung Müller“.</p></div>';
+    }).join('') : '<div class="empty-state"><div class="big-icon">📁</div><h2>Noch keine Projekte</h2><p>Lege ein Projekt an, z. B. „Wohnung Müller“.</p><button class="btn small ghost" data-act="loadDemo" style="margin-top:6px">Beispielprojekt zum Ausprobieren laden</button></div>';
   }
 
   function renderSummary() {
@@ -1794,6 +1794,7 @@
     delDiag: (el) => { const r = room(); mutate(() => { r.meas.diags = r.meas.diags.filter((d) => d.id !== el.dataset.id); applyMeasure(r); }); },
     newRoom: () => openRoomDialog(),
     openRoom: (el) => openRoom(el.dataset.id),
+    loadDemo: () => { const p = demoProject(); db.projects[p.id] = p; P = p; persist(); renderAll(); toast('Beispielprojekt geladen – du kannst es jederzeit löschen'); },
     hideTabHint: () => { try { sessionStorage.setItem('ra_tab_hint', '1'); } catch (e) { /* */ } renderStorageNotice(); },
     ovTab: (el) => { ui.ovTab = el.dataset.tab; renderAll(); },
     delRoomCard: (el) => {
