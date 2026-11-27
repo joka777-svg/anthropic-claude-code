@@ -2401,6 +2401,7 @@
   };
   const OP = window.OpeningsModule ? window.OpeningsModule(RA) : null;
   if (OP) { OP.preload(P).catch(() => {}); setTimeout(() => OP.gc(db), 3000); }
+  RA.OP = OP;
   const HM = window.HandoverModule ? window.HandoverModule(RA) : null;
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(svg);

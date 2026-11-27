@@ -524,3 +524,5 @@ table.walls .cell-input { max-width: 110px; padding: 7px 9px; }
 /* Hinweis zum Speichern */
 .storage-notice { margin: 0 16px 10px; padding: 11px 13px; border-radius: 14px; background: var(--warn-soft); color: var(--text); font-size: 14px; line-height: 1.45; }
 .storage-notice .btn { margin-top: 8px; display: inline-flex; }
+
+.badge.work { background: var(--accent-soft); color: var(--accent-ink); }

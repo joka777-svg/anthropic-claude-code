@@ -56,6 +56,7 @@ window.HandoverModule = function (RA) {
     const doors = ops.filter((o) => o.type === 'door').reduce((s, o) => s + (o.qty || 1), 0);
     const wins = ops.filter((o) => o.type === 'window').reduce((s, o) => s + (o.qty || 1), 0);
     if (doors) lines.push(`Türen: ${doors} Stück (${ops.filter((o) => o.type === 'door').map((o) => o.pos).join(', ')})`);
+    if (RA.OP && RA.OP.workSummary) RA.OP.workSummary().forEach((w) => lines.push(`${w.label}: ${w.count} Stück (${w.pos.join(', ')})`));
     if (wins) lines.push(`Fenster: ${wins} Stück (${ops.filter((o) => o.type === 'window').map((o) => o.pos).join(', ')})`);
     return lines.join('\n') || 'Leistungen laut Auftrag';
   }

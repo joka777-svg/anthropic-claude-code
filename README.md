@@ -24,6 +24,9 @@ App für iPhone und iPad. Mit ihr zeichnest du Grundrisse und berechnest Bodenfl
     - Anschlag DIN links oder rechts, Aufschlag, Türart, Zarge, Schloss.
     - Die Höhe misst du ab Fertigfußboden, ab Rohfußboden (abzüglich Aufbau) oder ab Meterriss.
     - Die App zeigt automatisch das **Normmaß** nach DIN 18101 (Rohbaurichtmaß und Türblatt) oder meldet ein Sondermaß.
+  - **Türen – Maßart:** Wähle zwischen Rohbaumaß (Maueröffnung) und Türmaß (Türblatt B × H × Dicke). Beim Türmaß erkennt die App Norm-Türblätter.
+  - **Türen – Kürzen:** Türblatt kürzen, Türelement kürzen oder Zarge ausklinken. Dazu „um wie viel mm“ und „Anzahl Türen“.
+  - **Türen – Zusatzarbeiten:** Wandanschlüsse ausfugen, Beiputzen, Bandtaschen klopfen und Freitext. Das PDF fasst alles in der Tabelle „Zusatzarbeiten Türen“ mit Stückzahlen und Positionen zusammen. Ins Abnahmeprotokoll wird es auf Knopfdruck übernommen.
   - **Fenster:**
     - 1 bis 3 Flügel mit Öffnungsart (Dreh-Kipp, Dreh, Kipp, Fest, Schiebe), Oberlicht, Balkontür.
     - Dazu Material, Verglasung, Farben, Rollladen, Brüstung und Einbausituation.

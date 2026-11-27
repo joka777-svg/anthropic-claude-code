@@ -64,6 +64,10 @@ window.OpeningsModule = function (RA) {
       return Object.assign(base, {
         doorType: 'Zimmertür', din: 'L', openIn: true, frame: 'Umfassungszarge', lock: 'BB (Buntbart)',
         heightRef: 'OFF', floorBuild: null, finish: '',
+        measureMode: 'rohbau', leafT: null,
+        cut: { leaf: false, element: false, notch: false, mm: null, qty: null },
+        works: { joints: false, plaster: false, hinges: false },
+        worksNote: '',
       });
     }
     return Object.assign(base, {
@@ -86,6 +90,11 @@ window.OpeningsModule = function (RA) {
     if (wl0.length > 2) out.wall[1] = Math.max(...wl0.slice(1));
     delete out.diag; // Diagonalen werden bei Türen/Fenstern nicht mehr erfasst
     out.outer = Object.assign({ w: null, h: null }, o.outer || {});
+    if (out.type === 'door') {
+      out.cut = Object.assign({ leaf: false, element: false, notch: false, mm: null, qty: null }, o.cut || {});
+      out.works = Object.assign({ joints: false, plaster: false, hinges: false }, o.works || {});
+      if (out.measureMode !== 'tuer') out.measureMode = 'rohbau';
+    }
     if (out.type === 'window') {
       out.sillIn = Object.assign(defaults('window').sillIn, o.sillIn || {});
       out.sillOut = Object.assign(defaults('window').sillOut, o.sillOut || {});
@@ -107,10 +116,12 @@ window.OpeningsModule = function (RA) {
   const cur = () => { const o = (RA.P.openings || []).find((x) => x.id === RA.ui.openingId); return o ? ensure(o) : null; };
 
   // ---------------------------------------------------------------- Berechnungen
+  const isLeaf = (o) => o.type === 'door' && o.measureMode === 'tuer';
   function calc(o) {
-    const W = minOf(o.w), H = minOf(o.h);
-    const dW = isNum(W) ? maxOf(o.w) - W : 0;
-    const dH = isNum(H) ? maxOf(o.h) - H : 0;
+    const ws = isLeaf(o) ? [o.w[0]] : o.w, hs = isLeaf(o) ? [o.h[0]] : o.h;
+    const W = minOf(ws), H = minOf(hs);
+    const dW = isNum(W) ? maxOf(ws) - W : 0;
+    const dH = isNum(H) ? maxOf(hs) - H : 0;
     const r = { W, H, dW, dH, checks: [] };
     if (dW > 5) r.checks.push({ lvl: 'warn', t: `Breite nicht parallel: ${mm(dW)} mm Unterschied – kleinstes Maß wird verwendet.` });
     if (dH > 5) r.checks.push({ lvl: 'warn', t: `Höhe ungleich: ${mm(dH)} mm Unterschied – kleinstes Maß wird verwendet.` });
@@ -124,7 +135,26 @@ window.OpeningsModule = function (RA) {
       if (isNum(r.outerDH)) parts.push(`Höhe ${r.outerDH >= 0 ? '+' : ''}${mm(r.outerDH)} mm`);
       r.checks.push({ lvl: (r.outerDW > 0 || r.outerDH > 0) ? 'info' : 'ok', t: `Außenmaß gegenüber innen: ${parts.join(', ')}.${o.type === 'window' && (r.outerDW > 0 || r.outerDH > 0) ? ' Verbreiterungen prüfen.' : ''}` });
     }
-    if (o.type === 'door') {
+    if (isLeaf(o)) {
+      // Türmaß: Türblatt gegen Norm-Türblätter (DIN 18101) prüfen
+      r.Hoff = H;
+      const LT = 3;
+      const lw = isNum(W) ? NORM_W.find(([, b]) => Math.abs(W - b) <= LT) : null;
+      const lh = isNum(H) ? NORM_H.find(([, b]) => Math.abs(H - b) <= LT) : null;
+      r.norm = lw && lh ? { w: lw[0], h: lh[0], bw: lw[1], bh: lh[1] } : null;
+      if (isNum(W) && isNum(H)) {
+        if (r.norm) r.checks.unshift({ lvl: 'ok', t: `Norm-Türblatt ${r.norm.bw} × ${r.norm.bh} mm (Rohbaurichtmaß ${r.norm.w} × ${r.norm.h} mm).` });
+        else {
+          const cw = NORM_W.reduce((a, b) => (Math.abs(b[1] - W) < Math.abs(a[1] - W) ? b : a));
+          const ch = NORM_H.reduce((a, b) => (Math.abs(b[1] - H) < Math.abs(a[1] - H) ? b : a));
+          r.near = { w: cw[0], h: ch[0], bw: cw[1], bh: ch[1] };
+          r.checks.unshift({ lvl: 'info', t: `Sondermaß-Türblatt. Nächstes Normblatt ${cw[1]} × ${ch[1]} mm (Abweichung ${W - cw[1] >= 0 ? '+' : ''}${mm(W - cw[1])} / ${H - ch[1] >= 0 ? '+' : ''}${mm(H - ch[1])} mm).` });
+        }
+      }
+      const wl = o.wall.filter(isNum);
+      r.wallMin = wl.length ? Math.min(...wl) : null;
+      r.wallMax = wl.length ? Math.max(...wl) : null;
+    } else if (o.type === 'door') {
       let Hoff = H;
       if (isNum(H) && o.heightRef === 'RFB') Hoff = H - (o.floorBuild || 0);
       if (isNum(H) && o.heightRef === 'MR') Hoff = H + 1000;
@@ -159,6 +189,22 @@ window.OpeningsModule = function (RA) {
     }
     return r;
   }
+
+  const WORKS = [
+    ['cut', 'leaf', 'Türblatt kürzen'], ['cut', 'element', 'Türelement kürzen'], ['cut', 'notch', 'Zarge ausklinken'],
+    ['works', 'joints', 'Wandanschlüsse ausfugen'], ['works', 'plaster', 'Beiputzen'], ['works', 'hinges', 'Bandtaschen klopfen'],
+  ];
+  const cutQty = (o) => (isNum(o.cut.qty) && o.cut.qty > 0 ? o.cut.qty : (o.qty || 1));
+  /** Zusatzarbeiten aller Türen: Leistung, Stückzahl, Positionen */
+  function workSummary() {
+    const doors = list().filter((o) => o.type === 'door');
+    return WORKS.map(([g, f, label]) => {
+      const arr = doors.filter((o) => o[g] && o[g][f]);
+      const count = arr.reduce((s, o) => s + (g === 'cut' ? cutQty(o) : (o.qty || 1)), 0);
+      return { label, count, pos: arr.map((o) => o.pos) };
+    }).filter((x) => x.count);
+  }
+  const doorWorkLabels = (o) => WORKS.filter(([g, f]) => o[g] && o[g][f]).map(([, , l]) => l);
 
   function nextPos(type) {
     const pre = type === 'door' ? 'T' : 'F';
@@ -412,15 +458,15 @@ window.OpeningsModule = function (RA) {
         const warn = c.checks.some((x) => x.lvl === 'warn');
         const extra = o.type === 'window'
           ? (isNum(c.orderW) ? `Bestellmaß ${mm(c.orderW)} × ${mm(c.orderH)}` : '')
-          : [isNum(c.wallMax) ? `Wand ${mm(c.wallMax)} mm` : '', c.norm ? `Norm ${c.norm.w} × ${c.norm.h}` : ''].filter(Boolean).join(' · ');
+          : [isNum(c.wallMax) ? `Wand ${mm(c.wallMax)} mm` : '', c.norm ? (isLeaf(o) ? `Normblatt ${c.norm.bw} × ${c.norm.bh}` : `Norm ${c.norm.w} × ${c.norm.h}`) : ''].filter(Boolean).join(' · ');
         return `<div class="op-card" role="button" tabindex="0" data-oact="open" data-id="${o.id}">
           <div class="op-pic">${toSvg(shapes(o, false), 'picto small')}</div>
           <div class="op-body">
             <div class="op-title"><span class="op-pos">${esc(o.pos)}</span> ${typeName(o)}${o.qty > 1 ? ` <span class="op-qty">× ${o.qty}</span>` : ''}</div>
-            <div class="op-size">${size} <small>mm</small></div>
+            <div class="op-size">${size} <small>mm${isLeaf(o) ? ' Türblatt' : ''}</small></div>
             <div class="op-spec">${esc(shortSpec(o))}</div>
             ${extra ? `<div class="op-spec">${extra}</div>` : ''}
-            <div class="op-badges">${warn ? '<span class="badge warn">prüfen</span>' : isNum(c.W) && isNum(c.H) ? '<span class="badge ok">✓ gemessen</span>' : '<span class="badge">offen</span>'}${o.photos.length ? `<span class="badge">📷 ${o.photos.length}</span>` : ''}</div>
+            <div class="op-badges">${warn ? '<span class="badge warn">prüfen</span>' : isNum(c.W) && isNum(c.H) ? '<span class="badge ok">✓ gemessen</span>' : '<span class="badge">offen</span>'}${o.type === 'door' ? doorWorkLabels(o).map((l) => `<span class="badge work">${esc(l)}</span>`).join('') : ''}${o.photos.length ? `<span class="badge">📷 ${o.photos.length}</span>` : ''}</div>
           </div>
           <button class="card-del" data-oact="del" data-id="${o.id}" aria-label="${esc(o.pos)} löschen" title="Löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>`;
@@ -462,8 +508,9 @@ window.OpeningsModule = function (RA) {
     const pills = c.checks.map((x) => `<div class="pill ${x.lvl === 'ok' ? 'okp' : x.lvl === 'warn' ? 'warnp' : ''}">${esc(x.t)}</div>`).join('');
     let main = '';
     if (isNum(c.W) && isNum(c.H)) {
-      main = `<div class="op-main"><span>Rohbauöffnung (kleinstes Maß)</span><b>${mm(c.W)} × ${mm(c.H)} mm</b></div>`;
-      if (o.type === 'door' && o.heightRef !== 'OFF') main += `<div class="op-main sub"><span>Höhe ab Fertigfußboden</span><b>${mm(c.Hoff)} mm</b></div>`;
+      main = `<div class="op-main"><span>${isLeaf(o) ? 'Türblatt (Türmaß)' : 'Rohbauöffnung (kleinstes Maß)'}</span><b>${mm(c.W)} × ${mm(c.H)} mm</b></div>`;
+      if (isLeaf(o) && isNum(o.leafT)) main += `<div class="op-main sub"><span>Türblattdicke</span><b>${mm(o.leafT)} mm</b></div>`;
+      if (o.type === 'door' && !isLeaf(o) && o.heightRef !== 'OFF') main += `<div class="op-main sub"><span>Höhe ab Fertigfußboden</span><b>${mm(c.Hoff)} mm</b></div>`;
       if (o.type === 'door' && isNum(c.wallMax)) main += `<div class="op-main sub"><span>Wandstärke (größtes Maß)</span><b>${mm(c.wallMax)} mm</b></div>`;
       if (o.type === 'window' && isNum(c.orderW)) main += `<div class="op-main sub"><span>Bestellmaß Rahmen</span><b>${mm(c.orderW)} × ${mm(c.orderH)} mm</b></div>`;
       if (o.type === 'window' && isNum(c.totalW)) main += `<div class="op-main sub"><span>Gesamt inkl. Verbreiterungen</span><b>${mm(c.totalW)} × ${mm(c.totalH)} mm</b></div>`;
@@ -506,7 +553,19 @@ window.OpeningsModule = function (RA) {
       </div>
 
       <div class="card">
-        <div class="card-head"><h3>Rohbauöffnung</h3><span class="hint" style="margin:0">mm · cm · m (Laser)</span></div>
+        <div class="card-head"><h3>${isLeaf(o) ? 'Türmaß (Türblatt)' : 'Rohbauöffnung'}</h3><span class="hint" style="margin:0">mm · cm · m (Laser)</span></div>
+        ${isDoor ? `<div class="field" style="margin-bottom:8px"><span>Maßart</span>${seg('measureMode', o.measureMode, [['rohbau', 'Rohbaumaß'], ['tuer', 'Türmaß (Türblatt)']])}</div>` : ''}
+        ${isLeaf(o) ? `
+        <p class="hint">Türblatt messen (Außenmaß ohne Falz). Die App erkennt Norm-Türblätter.</p>
+        <div class="grid3">
+          ${numIn('w.0', o.w[0], 'z. B. 860', false, 'Breite')}
+          ${numIn('h.0', o.h[0], 'z. B. 1985', false, 'Höhe')}
+          ${numIn('leafT', o.leafT, 'z. B. 40', true, 'Dicke')}
+        </div>
+        <div class="m-grid" style="margin-top:10px">
+          <span class="m-lbl">Wand</span>
+          ${numIn('wall.0', o.wall[0], 'links', true, 'links')}${numIn('wall.1', o.wall[1], 'rechts', true, 'rechts')}<span></span>
+        </div>` : `
         <p class="hint">An drei Stellen messen – das kleinste Maß zählt. Eingabe in mm (885), cm (88,5) oder m vom Laser (0,885). Mit Enter zum nächsten Feld.</p>
         <div class="m-grid">
           <span class="m-lbl">Breite</span>
@@ -517,9 +576,9 @@ window.OpeningsModule = function (RA) {
           ${numIn('wall.0', o.wall[0], 'links', true, 'links')}${numIn('wall.1', o.wall[1], 'rechts', true, 'rechts')}<span></span>` : ''}
           ${isDoor ? '' : `<span class="m-lbl">Außen</span>
           ${numIn('outer.w', o.outer.w, 'Breite', false, 'Breite')}${numIn('outer.h', o.outer.h, 'Höhe', false, 'Höhe')}<span></span>`}
-        </div>
+        </div>`}
         <p class="hint" style="margin-top:8px">${isDoor ? 'Wand = Wandstärke in mm, links und rechts – das größte Maß zählt.' : 'Außenmaß: Öffnung auf der Außenseite, z. B. wegen Verbreiterungen oder Anschlag.'}</p>
-        ${isDoor ? `
+        ${isLeaf(o) ? '' : isDoor ? `
           <div class="grid2" style="margin-top:10px">
             ${sel('heightRef', o.heightRef, HREFS, 'Höhe gemessen')}
             ${o.heightRef === 'RFB' ? numIn('floorBuild', o.floorBuild, 'z. B. 80', true, 'Fußbodenaufbau (mm)') : '<span></span>'}
@@ -545,6 +604,25 @@ window.OpeningsModule = function (RA) {
           ${isPass(o) ? '' : sel('lock', o.lock, LOCKS, 'Schloss')}
           ${txt('finish', o.finish, 'Oberfläche / Farbe', isPass(o) ? 'z. B. Weißlack' : 'z. B. Weißlack, Glasausschnitt')}
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Kürzen</h3></div>
+        ${isPass(o) ? '' : chk('cut.leaf', o.cut.leaf, 'Türblatt kürzen')}
+        ${chk('cut.element', o.cut.element, isPass(o) ? 'Zarge kürzen' : 'Türelement kürzen (Türblatt + Zarge)')}
+        ${chk('cut.notch', o.cut.notch, 'Zarge ausklinken')}
+        ${o.cut.leaf || o.cut.element || o.cut.notch ? `<div class="grid2" style="margin-top:6px">
+          ${numIn('cut.mm', o.cut.mm, 'z. B. 15', true, 'Kürzen um (mm)')}
+          <label class="field"><span>Anzahl Türen</span><input data-of="cut.qty" inputmode="numeric" value="${isNum(o.cut.qty) ? o.cut.qty : o.qty}"></label>
+        </div>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Zusatzarbeiten</h3></div>
+        ${chk('works.joints', o.works.joints, 'Wandanschlüsse ausfugen')}
+        ${chk('works.plaster', o.works.plaster, 'Beiputzen')}
+        ${chk('works.hinges', o.works.hinges, 'Bandtaschen klopfen')}
+        <div style="margin-top:6px">${txt('worksNote', o.worksNote, 'Weitere Arbeiten', 'z. B. Türstopper montieren, Schwelle entfernen')}</div>
       </div>` : `
       <div class="card">
         <div class="card-head"><h3>Ausführung</h3></div>
@@ -639,8 +717,8 @@ window.OpeningsModule = function (RA) {
   }
 
   // Felder, die die Formularstruktur ändern → komplett neu zeichnen
-  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony', 'frame', 'outer.w', 'outer.h']);
-  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal', 'ext.l', 'ext.r', 'ext.t', 'ext.b',
+  const STRUCT = new Set(['heightRef', 'transom', 'shutter', 'sillIn.on', 'sillOut.on', 'balcony', 'frame', 'outer.w', 'outer.h', 'cut.leaf', 'cut.element', 'cut.notch']);
+  const SMALL_KEYS = new Set(['floorBuild', 'gapSide', 'gapTop', 'gapBottom', 'wall.0', 'wall.1', 'sillIn.reveal', 'sillOut.reveal', 'ext.l', 'ext.r', 'ext.t', 'ext.b', 'leafT', 'cut.mm',
     'sillIn.front', 'sillIn.side', 'sillIn.insert', 'sillOut.front', 'sillOut.side', 'sillOut.insert']);
   function setPath(o, path, v) {
     const ks = path.split('.');
@@ -663,7 +741,7 @@ window.OpeningsModule = function (RA) {
       v = parseMM(el.value, SMALL_KEYS.has(k) || el.dataset.small === '1');
       if (Number.isNaN(v) || (isNum(v) && (v < 0 || v > 20000))) { toast('Bitte eine gültige Länge eingeben (z. B. 885 oder 88,5 cm)'); el.value = ''; return; }
       el.value = mmIn(v);
-    } else if (k === 'qty') v = Math.max(1, Math.round(Number(String(el.value).replace(',', '.')) || 1));
+    } else if (k === 'qty' || k === 'cut.qty') v = Math.max(1, Math.round(Number(String(el.value).replace(',', '.')) || 1));
     else v = el.value;
     if (k === 'pos') v = String(v).trim() || o.pos;
     if (k === 'roomText') {
@@ -726,7 +804,7 @@ window.OpeningsModule = function (RA) {
     const o = defaults(type);
     if (last) {
       const keep = type === 'door'
-        ? ['doorType', 'frame', 'lock', 'heightRef', 'floorBuild', 'finish', 'wall']
+        ? ['doorType', 'frame', 'lock', 'heightRef', 'floorBuild', 'finish', 'wall', 'measureMode']
         : ['material', 'glazing', 'colorIn', 'colorOut', 'shutter', 'shutterDrive', 'mount', 'gapSide', 'gapTop', 'gapBottom', 'sillIn', 'sillOut'];
       keep.forEach((k) => { o[k] = JSON.parse(JSON.stringify(last[k])); });
       if (type === 'window') { o.sillIn.reveal = last.sillIn.reveal; o.sillOut.reveal = last.sillOut.reveal; }
@@ -834,8 +912,15 @@ window.OpeningsModule = function (RA) {
     const wins = items.filter((o) => o.type === 'window');
     if (doors.length) {
       ctx.heading('Türen');
-      ctx.table([{ label: 'Pos', w: 14 }, { label: 'Raum / Ort', w: 38 }, { label: 'Stk', w: 10, align: 'right' }, { label: 'Rohbau B × H', w: 34, align: 'right' }, { label: 'Wand', w: 18, align: 'right' }, { label: 'DIN', w: 14 }, { label: 'Art / Zarge', w: 50 }],
-        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}` : '–', isNum(c.wallMax) ? mm(c.wallMax) : '–', isPass(o) ? '–' : o.din === 'L' ? 'links' : 'rechts', isPass(o) ? 'Durchgangszarge' : `${o.doorType}, ${o.frame}`] }; }), { rowH: 6 });
+      ctx.table([{ label: 'Pos', w: 14 }, { label: 'Raum / Ort', w: 38 }, { label: 'Stk', w: 10, align: 'right' }, { label: 'Maß B × H', w: 34, align: 'right' }, { label: 'Wand', w: 18, align: 'right' }, { label: 'DIN', w: 14 }, { label: 'Art / Zarge', w: 50 }],
+        doors.map((o) => { const c = calc(o); return { cells: [o.pos, roomName(o) || '–', String(o.qty), isNum(c.W) ? `${mm(c.W)} × ${mm(c.Hoff ?? c.H)}${isLeaf(o) ? ' TB' : ''}` : '–', isNum(c.wallMax) ? mm(c.wallMax) : '–', isPass(o) ? '–' : o.din === 'L' ? 'links' : 'rechts', isPass(o) ? 'Durchgangszarge' : `${o.doorType}, ${o.frame}`] }; }), { rowH: 6 });
+    }
+    if (doors.some(isLeaf)) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(95, 100, 112); doc.text('TB = Türmaß (Türblatt), sonst Rohbaumaß', M, ctx.getY() - 1); ctx.setY(ctx.getY() + 6); }
+    const ws = workSummary();
+    if (ws.length) {
+      ctx.heading('Zusatzarbeiten Türen');
+      ctx.table([{ label: 'Leistung', w: 70 }, { label: 'Stk', w: 14, align: 'right' }, { label: 'Positionen', w: 94 }],
+        ws.map((w) => ({ cells: [w.label, String(w.count), w.pos.join(', ')] })), { rowH: 6 });
     }
     if (wins.length) {
       ctx.heading('Fenster');
@@ -857,16 +942,25 @@ window.OpeningsModule = function (RA) {
       const add = (k, v) => { if (v !== '' && v != null) rows.push([k, String(v)]); };
       add('Raum / Ort', [roomName(o), o.location && roomName(o) !== o.location ? o.location : ''].filter(Boolean).join(' – ') || '–');
       if (o.qty > 1) add('Anzahl', `${o.qty} Stück`);
-      add('Breite o / m / u', o.w.map(mm).join(' / ') + ' mm');
-      add('Höhe l / m / r', o.h.map(mm).join(' / ') + ' mm');
-      add('Maßgebend B × H', isNum(c.W) && isNum(c.H) ? `${mm(c.W)} × ${mm(c.H)} mm` : '–');
+      if (isLeaf(o)) {
+        add('Maßart', 'Türmaß (Türblatt)');
+        add('Türblatt B × H', `${mm(o.w[0])} × ${mm(o.h[0])} mm`);
+        if (isNum(o.leafT)) add('Türblattdicke', `${mm(o.leafT)} mm`);
+      } else {
+        add('Breite o / m / u', o.w.map(mm).join(' / ') + ' mm');
+        add('Höhe l / m / r', o.h.map(mm).join(' / ') + ' mm');
+      }
+      if (!isLeaf(o)) add('Maßgebend B × H', isNum(c.W) && isNum(c.H) ? `${mm(c.W)} × ${mm(c.H)} mm` : '–');
       if (o.type === 'window' && (isNum(o.outer.w) || isNum(o.outer.h))) add('Außenmaß B × H', `${mm(o.outer.w)} × ${mm(o.outer.h)} mm`);
       if (o.type === 'door') {
-        add('Höhe gemessen', HREFS.find((x) => x[0] === o.heightRef)[1] + (o.heightRef === 'RFB' ? `, Aufbau ${mm(o.floorBuild)} mm` : ''));
-        if (o.heightRef !== 'OFF') add('Höhe ab OFF', `${mm(c.Hoff)} mm`);
+        if (!isLeaf(o)) {
+          add('Höhe gemessen', HREFS.find((x) => x[0] === o.heightRef)[1] + (o.heightRef === 'RFB' ? `, Aufbau ${mm(o.floorBuild)} mm` : ''));
+          if (o.heightRef !== 'OFF') add('Höhe ab OFF', `${mm(c.Hoff)} mm`);
+        }
         add('Wandstärke l / r', o.wall.map(mm).join(' / ') + ' mm');
         add('Wandstärke (größtes)', isNum(c.wallMax) ? `${mm(c.wallMax)} mm` : '–');
-        add('Normmaß', c.norm ? `RRM ${c.norm.w} × ${c.norm.h}${isPass(o) ? '' : `, Türblatt ${c.norm.bw} × ${c.norm.bh}`}` : c.near ? `Sondermaß (nächste Norm ${c.near.w} × ${c.near.h})` : '–');
+        if (isLeaf(o)) add('Normmaß', c.norm ? `Türblatt ${c.norm.bw} × ${c.norm.bh} (RRM ${c.norm.w} × ${c.norm.h})` : c.near ? `Sondermaß (nächstes Normblatt ${c.near.bw} × ${c.near.bh})` : '–');
+        else add('Normmaß', c.norm ? `RRM ${c.norm.w} × ${c.norm.h}${isPass(o) ? '' : `, Türblatt ${c.norm.bw} × ${c.norm.bh}`}` : c.near ? `Sondermaß (nächste Norm ${c.near.w} × ${c.near.h})` : '–');
         if (isPass(o)) add('Zarge', 'Durchgangszarge, ohne Türblatt');
         else {
           add('Anschlag', `DIN ${o.din === 'L' ? 'links' : 'rechts'}, Aufschlag ${o.openIn ? 'in den Raum' : 'aus dem Raum'}`);
@@ -874,6 +968,10 @@ window.OpeningsModule = function (RA) {
           add('Schloss', o.lock);
         }
         add('Oberfläche', o.finish);
+        const cuts = doorWorkLabels(o).filter((l) => /kürzen|ausklinken/.test(l));
+        if (cuts.length) add('Kürzen', `${cuts.join(', ')}${isNum(o.cut.mm) ? ` – um ${mm(o.cut.mm)} mm` : ''} – ${cutQty(o)} Stück`);
+        const works = doorWorkLabels(o).filter((l) => !/kürzen|ausklinken/.test(l)).concat(o.worksNote ? [o.worksNote] : []);
+        if (works.length) add('Zusatzarbeiten', works.join(', '));
       } else {
         add('Bestellmaß Rahmen', isNum(c.orderW) ? `${mm(c.orderW)} × ${mm(c.orderH)} mm (Fugen ${mm(o.gapSide)}/${mm(o.gapTop)}/${mm(o.gapBottom)})` : '–');
         if (c.hasExt) add('Verbreiterungen', `links ${mm(o.ext.l)}, rechts ${mm(o.ext.r)}, oben ${mm(o.ext.t)}, unten ${mm(o.ext.b)} mm`);
@@ -955,7 +1053,7 @@ window.OpeningsModule = function (RA) {
   }
 
   return {
-    normalize, renderList, totalsHtml, renderEditor, pdfPages, pdfSummaryLine,
+    normalize, renderList, totalsHtml, renderEditor, pdfPages, pdfSummaryLine, workSummary,
     preload, gc, exportPhotos, importPhotos, photoCache: Photos.cache, calc, parseMM, shapes, toSvg,
   };
 };
